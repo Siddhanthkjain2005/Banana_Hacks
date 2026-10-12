@@ -1,5 +1,6 @@
 /** Examples use illustrative scene-width assumptions, never measured photos. */
 export const SAMPLE_COLLECTIONS = Object.freeze([
+  { id: 'patterns', name: 'Pattern mix', description: 'Navy stripe, red gingham, polka dots, florals, denim and a pinstripe, some lying off grain.', src: '/assets/sample-patterns.png', sceneWidthCm: 90, tag: 'FabricNet showcase', palette: ['#22385e', '#a12c35', '#b9821e', '#2f4b3a'], generated: false, procedural: true },
   { id: 'earth', name: 'Earth & olive', description: 'Linen tones, olive canvas and small denim accents.', src: '/assets/sample-fabric.png', sceneWidthCm: 90, tag: 'Illustrative swatches', palette: ['#75835c', '#c5b79a', '#527281', '#a9674e'], generated: false, procedural: true },
   { id: 'denim-photo', name: 'Denim repair', description: 'Indigo denim, navy twill, teal cotton and warm canvas.', src: '/assets/sample-denim-photo.png', sceneWidthCm: 90, tag: 'AI-generated photo', palette: ['#31556c', '#192c47', '#376363', '#a77e46'], generated: true, procedural: false },
   { id: 'autumn-photo', name: 'Autumn linen', description: 'Rust linen, olive, ochre, burgundy and forest green.', src: '/assets/sample-autumn-photo.png', sceneWidthCm: 90, tag: 'AI-generated photo', palette: ['#b95a2d', '#858550', '#ca901f', '#79473b'], generated: true, procedural: false },

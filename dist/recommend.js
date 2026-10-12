@@ -21,6 +21,7 @@ export function recommendProducts(scraps, options = {}) {
     objective: options.objective ?? 'balanced',
     seamAllowanceCm: options.seamAllowanceCm ?? .7,
     rotation: options.rotation !== false,
+    grainAware: options.grainAware !== false,
     ...(options.size !== undefined ? { size: options.size } : {}),
   };
   const usableScrapCount = scraps.filter(isUsableMeasuredScrap).length;

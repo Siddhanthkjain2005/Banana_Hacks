@@ -329,7 +329,7 @@ test('receipts saved before share links report sharing as unavailable', async ()
 test('health, OpenAPI, and security headers describe the service without leaking configuration', async () => {
   const handler = createHandler({ env: { RETHREAD_IMAGE_API_KEY: 'sk-hidden', RETHREAD_IMAGE_MODEL: 'gpt-image-1' } });
   const health = await handler(request('GET', 'health')), body = json(health);
-  assert.deepEqual(body.features, ['jobs', 'share-links', 'plan', 'chain', 'pool', 'concept', 'packet', 'openapi']);
+  assert.deepEqual(body.features, ['jobs', 'share-links', 'plan', 'chain', 'pool', 'concept', 'packet', 'optimize', 'fabricnet-grain', 'openapi']);
   assert.deepEqual(body.imageGeneration, { configured: true, provider: 'api.openai.com', model: 'gpt-image-1', quality: 'medium' });
   assert.ok(!health.body.includes('sk-hidden'));
   assert.equal(json(await createHandler({ env: {} })(request('GET', 'health'))).imageGeneration.configured, false);
@@ -338,7 +338,7 @@ test('health, OpenAPI, and security headers describe the service without leaking
   const spec = json(await handler(request('GET', 'openapi.json')));
   assert.equal(spec.openapi, '3.1.0');
   assert.equal(spec.info.version, body.version);
-  assert.deepEqual(Object.keys(spec.paths).sort(), ['/chain', '/concept', '/health', '/jobs', '/jobs/{jobId}', '/jobs/{jobId}/packet', '/jobs/{jobId}/share', '/openapi.json', '/packet', '/plan', '/pool', '/ready'].sort());
+  assert.deepEqual(Object.keys(spec.paths).sort(), ['/chain', '/concept', '/health', '/jobs', '/jobs/{jobId}', '/jobs/{jobId}/packet', '/jobs/{jobId}/share', '/openapi.json', '/optimize', '/packet', '/plan', '/pool', '/ready'].sort());
 });
 
 test('structured request logs carry correlation and timing but never content or raw IDs', async () => {
@@ -380,4 +380,98 @@ test('PNG encoding round-trips RGBA pixels', () => {
   assert.deepEqual([decoded.width, decoded.height], [7, 5]);
   assert.deepEqual([...decoded.data], [...data]);
   assert.throws(() => decodePNG(Buffer.from('not a png at all, definitely not')), /Not a PNG/);
+});
+
+test('deep optimize keeps the grid, never returns a worse plan, and validates every candidate', async () => {
+  const { deepOptimize } = require('../api/lib/optimize.cjs');
+  const measured = validateJobPayload({ ...payload(), options: { product: 'pouch', objective: 'color', seamAllowanceCm: .7, rotation: true, size: 1.25 } });
+  let tick = 0;
+  const result = deepOptimize(core, measured.scraps, measured.options, { budgetMs: 1e9, maxTries: 12, seed: 3 }, () => {}, () => tick++);
+  assert.equal(result.search.tries, 12);
+  assert.deepEqual(result.plan.grid, result.baseline.grid);
+  assert.equal(result.plan.validated, true);
+  assert.ok(result.score.placed >= result.baseline.score.placed);
+  if (result.score.feasible === result.baseline.score.feasible && result.score.placed === result.baseline.score.placed)
+    assert.ok(result.score.largestOffcut.areaCm2 >= result.baseline.score.largestOffcut.areaCm2 - .5);
+  for (const p of result.plan.pieces) assert.ok(isPieceContained(p, measured.scraps.find(s => s.id === p.scrapId)));
+  // The same seed reproduces the same search.
+  tick = 0;
+  const again = deepOptimize(core, measured.scraps, measured.options, { budgetMs: 1e9, maxTries: 12, seed: 3 }, () => {}, () => tick++);
+  assert.deepEqual(again.plan.pieces.map(p => [p.x, p.y, p.scrapId]), result.plan.pieces.map(p => [p.x, p.y, p.scrapId]));
+});
+
+test('the optimize route is bounded and strict', async () => {
+  const handler = createHandler({ env: {} });
+  const ok = await handler(request('POST', 'optimize', payload({ optimize: { budgetMs: 600, seed: 9 } })));
+  assert.equal(ok.status, 200);
+  const body = json(ok);
+  assert.equal(body.plan.validated, true);
+  assert.ok(body.search.tries >= 0 && body.search.elapsedMs < 5000);
+  assert.ok(body.analytics.perScrap.length && body.arrangement.slots.length && body.impact.fabricReusedCm2 > 0);
+  assert.equal((await handler(request('POST', 'optimize', payload({ optimize: { budgetMs: 60000 } })))).status, 400);
+  assert.equal((await handler(request('POST', 'optimize', payload({ optimize: { depth: 3 } })))).status, 400);
+});
+
+test('applied search layouts are reproduced exactly by cloud planning and saved receipts', async () => {
+  const source = payload(), measured = validateJobPayload(source);
+  const grid = core.optimizePattern(measured.scraps, measured.options).grid;
+  const options = { ...source.options, searchSeed: 7919, grid };
+  const selected = core.optimizePattern(measured.scraps, options);
+  const handler = createHandler({ storage: new MemoryStore() });
+  const body = { ...source, options };
+  const planned = await handler(request('POST', 'plan', body));
+  assert.equal(planned.status, 200);
+  assert.deepEqual(json(planned).plan.pieces, selected.pieces);
+  const saved = await handler(request('POST', 'jobs', body));
+  assert.equal(saved.status, 201);
+  const receipt = json(saved);
+  assert.deepEqual(receipt.plan.pieces, selected.pieces);
+  assert.equal(receipt.options.searchSeed, 7919);
+  assert.deepEqual(receipt.options.grid, grid);
+  const read = await handler(request('GET', `jobs/${receipt.jobId}`, undefined, { 'X-ReThread-Token': receipt.accessToken }));
+  assert.deepEqual(json(read).plan.pieces, selected.pieces);
+  const packet = await handler(request('POST', 'packet?paper=a4', body));
+  assert.equal(packet.status, 200);
+  assert.match(packet.body.toString('latin1'), /^%PDF/);
+});
+
+test('layout reproduction hints reject missing, malformed and unbounded seeds or grids', async () => {
+  const handler = createHandler({ env: {} });
+  for (const hints of [
+    { searchSeed: 1 }, { grid: { cols: 2, rows: 2 } },
+    { searchSeed: -1, grid: { cols: 2, rows: 2 } },
+    { searchSeed: 2 ** 32, grid: { cols: 2, rows: 2 } },
+    { searchSeed: 1.5, grid: { cols: 2, rows: 2 } },
+    { searchSeed: 1, grid: { cols: 9, rows: 2 } },
+    { searchSeed: 1, grid: { cols: 2, rows: 0 } },
+    { searchSeed: 1, grid: { cols: 2, rows: 2, hidden: true } },
+  ]) {
+    const source = payload();
+    assert.equal((await handler(request('POST', 'plan', { ...source, options: { ...source.options, ...hints } }))).status, 400);
+  }
+});
+
+test('Azure entry reports safe dependency startup failures and forwards healthy requests', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { runInNewContext } = await import('node:vm');
+  const entry = await readFile(new URL('../api/service/index.js', import.meta.url), 'utf8');
+  const failed = { exports: {} }, logs = [];
+  runInNewContext(entry, { module: failed, require() {
+    const error = Error("Cannot find module '@azure/storage-blob'\nprivate diagnostic text must not be returned");
+    error.code = 'MODULE_NOT_FOUND'; throw error;
+  } });
+  const unavailable = { log: value => logs.push(value) };
+  await failed.exports(unavailable, { method: 'GET' });
+  assert.equal(unavailable.res.status, 503);
+  assert.equal(unavailable.res.body.error.code, 'API_STARTUP_FAILED');
+  assert.equal(unavailable.res.body.error.missingModule, '@azure/storage-blob');
+  assert.equal(unavailable.res.headers['Cache-Control'], 'no-store');
+  assert.ok(!JSON.stringify(unavailable.res).includes('private diagnostic text'));
+  assert.ok(!logs.join('').includes('private diagnostic text'));
+  const healthy = { exports: {} }, requestValue = { method: 'GET', url: '/api/health' }, context = {};
+  runInNewContext(entry, { module: healthy, require: () => ({ createHandler: () => async (req, invocation) => {
+    assert.equal(req, requestValue); assert.equal(invocation, context); return { status: 200, body: 'healthy' };
+  } }) });
+  await healthy.exports(context, requestValue);
+  assert.equal(context.res.status, 200);
 });

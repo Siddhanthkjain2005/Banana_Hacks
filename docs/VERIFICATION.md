@@ -2,6 +2,46 @@
 
 Verified on October 12, 2026. These results describe the prototype's behavior, not textile segmentation benchmarks or physically validated sewing patterns.
 
+## Version 1.3 checks (FabricNet, grain, assembly, zero-waste lab)
+
+Run on October 12, 2026 with Node.js 22 and headless Chromium (SwiftShader WebGL) against `npm run dev`, which serves the same Azure Functions handler with local file storage. The public Azure v1.3 deployment was subsequently verified on October 12, 2026 using the end-to-end API demo and interactive browser checks; see the public verification section below.
+
+**`npm test`: 72 of 72 pass**, including the 14 new tests listed in the README.
+
+| Check | Observed result |
+| --- | --- |
+| FabricNet held-out synthetic test (1,500 new patches, seed 4242) | 96.3% accuracy; most errors are textured weaves read as solids (19 of 250) |
+| Browser vs training forward pass | Equal to 1e-5 on every class |
+| Grain, synthetic stripes (11 angles × 5 periods) | Worst error 0.9° |
+| Pattern mix classes | Stripe 85%, check 90%, dots 91%, print 96%, textured 50%, solid 53%, pinstripe → stripe 79% |
+| Pattern mix grain (known rotation) | Stripe −6.0° (−6°), gingham +1.8° (+2°), pinstripe +8.9° (+9°), from pattern orientation; others within 1° from cut edges |
+| Grain-aware tote, Pattern mix | Complete, 20/20 cuts, 68.5% of usable fabric; 2 stripe scraps rotation-locked; 1 off-grain cut flagged. Grain rules off: 16/16 cuts on a 2 × 2 grid |
+| Server re-plan with FabricNet summaries | Identical cut IDs, scraps, positions, and rotations; malformed summaries → 400 |
+| Leftover chain, Pattern mix | Tote, then a 50% pouch: 68.5% → 76.2%; 38 cuts cross-validated |
+| Colour harmony | Same-fabric neighbours 0 → 0, mean neighbour ΔE 41.4 → 42.8, 1 swap; applied to the 3D model |
+| Deep search (7 s budget, seed 1) | 26 restarts; largest reusable offcut 22.2 × 5.6 cm → 5.3 × 31.2 cm, all 20 cuts placed |
+| Deep search, Denim repair tote (`npm run demo`, 3 s) | 12 restarts; all 26 cuts kept; largest reusable offcut 11.1 × 18.9 cm → 19.2 × 18.5 cm |
+| Original v1.2 demo numbers | Unchanged: 26/26 cuts, 64.5% → 76.6% chain, ΔE 21.2 → 29.5 |
+| Community pool, 125% tote with Earth & olive | Pooled plan complete with 26 cuts; alone: 8/10 and 14/16 cuts, so pooling unlocked it |
+| Maker packet, save, share | A4 PDF downloaded; cloud save verified; read-only link opened in a new browser context with `access: viewer` |
+| Layout and errors | No horizontal overflow at 360, 390, 768, 1024, and 1280 px; no console errors or page errors through the interaction run |
+
+FabricNet labels every scrap in the solid-colour samples (Earth & olive and the AI-generated photos) as textured or solid, as expected. Its accuracy on real photographs has not been measured.
+
+## Integration review
+
+The final review adds three regression tests: a selected search seed and fixed grid reproduce exactly the same cuts in cloud plans and saved receipts (and are accepted by packet generation); malformed reproduction hints are rejected; and product comparisons respect the grain-awareness toggle. A further fault-injection check covers safe startup errors and healthy request forwarding in the Azure entry. All 72 tests pass. Browser checks also confirmed that changing products during an active lab run clears stale results while retaining donor controls, both PDF buttons, and read-only sharing.
+
+FabricNet’s recorded evaluation was independently repeated on all 1,500 freshly synthesized patches (seed 4242), reproducing 1,445 correct classifications and the recorded confusion matrix: 96.3%. This remains a synthetic-data result.
+
+## Public Azure v1.3 verification
+
+The production API reports version 1.3.0 and private Blob storage is ready. `npm run demo -- --base https://salmon-stone-073245e00.4.azurestaticapps.net/` passed planning, arrangement, impact, chaining, pooling, deep search, design-map generation, maker packets, private saving, viewer retrieval, and owner deletion. Viewer deletion was denied with HTTP 403. The demo also reproduces the selected optimized cuts exactly in a separate planning call and the saved receipt. External image generation remains unconfigured.
+
+In the live browser, Pattern mix classified seven scraps, locked two directional stripes, flagged one off-grain cut, and produced a complete 20-cut tote. The lab completed in 14.3 seconds: 68.5% → 76.2% chained utilization with 38 cross-validated cuts; a larger reusable offcut after 48 seeded restarts; complete 125% pooled tote where neither donor alone could finish it; and the server design map. No browser console errors were observed. Timing and restart counts vary by device and instance load.
+
+The function entry now converts dependency initialization failures into a safe HTTP 503 response and logs only the missing module identifier and error category, rather than exposing stack traces or request content. Source files are deployed with standard readable permissions.
+
 ## Automated checks
 
 Run `npm test` with Node.js 20 or newer. The original v1.1 suite contains 38 checks:

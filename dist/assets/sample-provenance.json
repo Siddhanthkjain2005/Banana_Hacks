@@ -20,5 +20,13 @@
       "asset": "sample-bright-photo.png",
       "promptSuffix": "Color story: colorful school cotton. The two large pieces are strong cobalt blue plain cotton and cheerful coral-red plain cotton. Five smaller pieces are mustard yellow cotton, emerald green cotton, purple plum cotton, teal cotton and warm orange cotton. All solids, no polka dots or checkered prints, no very pale cloth. Cheerful vivid colors with real natural cotton texture, not plastic, not an illustration."
     }
+  ],
+  "procedural": [
+    {
+      "id": "patterns",
+      "asset": "sample-patterns.png",
+      "script": "scripts/make-pattern-sample.mjs",
+      "note": "Deterministic procedural render for the FabricNet showcase. Known ground truth: stripe rotated -6 degrees, gingham +2, pinstripe +9; all others within 1 degree. Scale is illustrative (90 cm scene)."
+    }
   ]
 }

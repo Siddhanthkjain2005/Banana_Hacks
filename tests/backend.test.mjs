@@ -200,10 +200,10 @@ test('only the configured browser origin is allowed and OPTIONS never uses wildc
 
 test('per-instance request and POST rates are enforced', async () => {
   const handler = createHandler({ storage: new MemoryStore() });
-  for (let i = 0; i < 60; i++) assert.equal((await handler(request('GET', 'health'))).status, 200);
+  for (let i = 0; i < 90; i++) assert.equal((await handler(request('GET', 'health'))).status, 200);
   assert.equal((await handler(request('GET', 'health'))).status, 429);
   const posts = createHandler({ env: {} });
-  for (let i = 0; i < 10; i++) assert.equal((await posts(request('POST', 'jobs', payload()))).status, 503);
+  for (let i = 0; i < 24; i++) assert.equal((await posts(request('POST', 'jobs', payload()))).status, 503);
   assert.equal((await posts(request('POST', 'jobs', payload()))).status, 429);
 });
 

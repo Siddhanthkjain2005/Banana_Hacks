@@ -96,7 +96,7 @@ function fallback(container, onReady) {
   node.style.cssText = 'display:grid;place-items:center;min-height:380px;padding:40px;color:#dce4d1;text-align:center;font-family:inherit;';
   node.innerHTML = '<div><svg width="170" height="210" viewBox="0 0 170 210" aria-hidden="true"><path d="M47 64C47 0 123 0 123 64" fill="none" stroke="#cfc1a2" stroke-width="12"/><path d="M20 62L150 62L145 197Q85 210 25 197Z" fill="#7f8e65"/><path d="M20 62H88V135H23Z" fill="#c5b599"/><path d="M88 135H147L145 197H88Z" fill="#aa7259"/><path d="M88 62V199M22 135H148" stroke="#e4d9bc" stroke-width="2" stroke-dasharray="4 4"/></svg><p style="margin:18px 0 6px;font-size:17px">Your patchwork, reimagined.</p><p style="margin:0;font-size:12px;opacity:.65">3D preview needs a browser with WebGL enabled.</p></div>';
   container.appendChild(node); onReady?.({ supported: false });
-  return { update() {}, setExploded() {}, setWireframe() {}, setPhoto() {}, resetView() {}, capture: () => null, dispose: () => node.remove() };
+  return { update() {}, playAssembly: () => false, assembling: false, setExploded() {}, setWireframe() {}, setPhoto() {}, resetView() {}, capture: () => null, dispose: () => node.remove() };
 }
 
 export function createStudio(container, options = {}) {
@@ -192,16 +192,19 @@ export function createStudio(container, options = {}) {
     for (let j = 0; j < splitY.length - 1; j++) for (let i = 0; i < splitX.length - 1; i++) {
       const index = (j * (splitX.length - 1) + i + (reverse ? 2 : 0)) % palette.length;
       const mat = assigned(panel, splitY.length - 2 - j, i, palette[index]);
-      mesh(patchGeometry(splitX[i], splitX[i + 1], splitY[j], splitY[j + 1], surface), mat, group);
+      const patch = mesh(patchGeometry(splitX[i], splitX[i + 1], splitY[j], splitY[j + 1], surface), mat, group);
+      patch.userData.patch = { panel, row: splitY.length - 2 - j, col: i, back: reverse };
+      const before = group.children.length;
       addStitches(group, surface, splitX[i], splitX[i + 1], splitY[j], splitY[j + 1], reverse ? -.012 : .012);
+      for (let k = before; k < group.children.length; k++) group.children[k].userData.stitch = true;
     }
     for (const u of splitX.slice(1, -1)) {
       const pts = Array.from({ length: 45 }, (_, i) => { const p = surface(u, -1 + 2 * i / 44); p.z += reverse ? -.006 : .006; return p; });
-      group.add(seam(pts, seamMat, .005));
+      group.add(seam(pts, seamMat, .005)).children.at(-1).userData.seam = true;
     }
     for (const v of splitY.slice(1, -1)) {
       const pts = Array.from({ length: 45 }, (_, i) => { const p = surface(-1 + 2 * i / 44, v); p.z += reverse ? -.006 : .006; return p; });
-      group.add(seam(pts, seamMat, .005));
+      group.add(seam(pts, seamMat, .005)).children.at(-1).userData.seam = true;
     }
   }
   function label(group, surface, x = .62, y = -.65) {
@@ -314,6 +317,7 @@ export function createStudio(container, options = {}) {
     product = new THREE.Group(); rig.add(product); groups = [];
   }
   function update(plan = {}, scraps = []) {
+    stopAssembly();
     savedPlan = plan; savedScraps = scraps;
     clearProduct();
     const pieces = plan.pieces || plan.placements || [];
@@ -344,6 +348,140 @@ export function createStudio(container, options = {}) {
     render();
   }
 
+  // ── Assembly animation ────────────────────────────────────────────────
+  // Every planned cut starts flat on a mat printed with the source photo, at
+  // the exact pixels it will be cut from. Each piece lifts, turns, and bends
+  // into its slot on the product; the remaining parts fly in; stitches sew
+  // themselves. Geometry is morphed from the photographed rectangle to the
+  // final curved panel, so the texture never jumps.
+  let assembly = null, camOverride = null;
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+  function pieceKey(p) { return `${p.panel}:${p.row}:${p.col}`; }
+  function matCanvas(pieces) {
+    const W = sourcePhoto.width, H = sourcePhoto.height, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d'); ctx.drawImage(sourcePhoto, 0, 0); ctx.fillStyle = 'rgba(14,26,20,.22)'; ctx.fillRect(0, 0, W, H);
+    const s = W / 1200;
+    for (const p of pieces) {
+      const w = p.occupiedPixelWidth || p.width, h = p.occupiedPixelHeight || p.height;
+      ctx.fillStyle = 'rgba(10,20,16,.62)'; ctx.fillRect(p.x, p.y, w, h);
+      ctx.setLineDash([6 * s, 4 * s]); ctx.strokeStyle = 'rgba(214,236,178,.9)'; ctx.lineWidth = 2 * s; ctx.strokeRect(p.x, p.y, w, h);
+    }
+    return c;
+  }
+  function playAssembly() {
+    stopAssembly();
+    const pieces = savedPlan?.pieces || [];
+    if (reducedMotion || !sourcePhoto || !pieces.length || !product) return false;
+    exploded = false; explodeValue = 0; groups.forEach(g => g.position.set(0, 0, 0));
+    const W = sourcePhoto.width, H = sourcePhoto.height, sx = product.scale.x || 1;
+    const matW = 4.4, matH = matW * H / W, matY = -1.36 - product.position.y;
+    const toMat = (px, py, lift = 0) => new THREE.Vector3((px / W - .5) * matW / sx, matY + lift, (py / H - .5) * matH);
+    const byKey = new Map(pieces.map(p => [pieceKey(p), p]));
+    // Photo mat with dark "holes" that appear as pieces are lifted away.
+    const matTexture = new THREE.CanvasTexture(matCanvas(pieces)); matTexture.colorSpace = THREE.SRGBColorSpace;
+    const matMaterial = new THREE.MeshStandardMaterial({ map: matTexture, roughness: 1, transparent: true });
+    const mat = new THREE.Mesh(new THREE.PlaneGeometry(matW / sx, matH), matMaterial);
+    mat.rotation.x = -Math.PI / 2; mat.position.y = matY; mat.receiveShadow = true; product.add(mat);
+    const photoTexture = new THREE.CanvasTexture(sourcePhoto); photoTexture.colorSpace = THREE.SRGBColorSpace;
+    const items = [], others = [], stitches = [], decor = [], used = new Set();
+    product.updateMatrixWorld(true);
+    for (const group of groups) {
+      const hasPatches = group.children.some(c => c.userData.patch);
+      if (!hasPatches) { others.push(group); group.visible = false; continue; }
+      for (const child of group.children) {
+        const piece = child.userData.patch && byKey.get(`${child.userData.patch.panel}:${child.userData.patch.row}:${child.userData.patch.col}`);
+        if (piece) items.push({ mesh: child, piece });
+        else if (child.userData.stitch) { stitches.push(child); child.geometry.setDrawRange(0, 0); }
+        else { decor.push(child); child.visible = false; }
+      }
+    }
+    items.sort((a, b) => (a.mesh.userData.patch.back - b.mesh.userData.patch.back) || a.piece.row - b.piece.row || a.piece.col - b.piece.col);
+    items.forEach((item, index) => {
+      const { mesh: m, piece } = item; used.add(pieceKey(piece));
+      const original = m.geometry, pos = original.attributes.position, uv = original.attributes.uv, n = pos.count;
+      const C = new THREE.Vector3(); for (let k = 0; k < n; k++) C.add(new THREE.Vector3().fromBufferAttribute(pos, k)); C.multiplyScalar(1 / n);
+      const w = piece.occupiedPixelWidth || piece.width, h = piece.occupiedPixelHeight || piece.height, lift = .004 + index * .0004;
+      const L = toMat(piece.x + w / 2, piece.y + h / 2, lift);
+      const q0 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), m.userData.patch.back ? Math.PI / 2 : -Math.PI / 2), qInv = q0.clone().invert();
+      const flat = new Float32Array(n * 3), curved = new Float32Array(n * 3), flatNormal = new Float32Array(n * 3);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(qInv);
+      for (let k = 0; k < n; k++) {
+        const s = uv.getX(k), t = uv.getY(k);
+        // Inverse of the texture crop in material(): uv → source photo pixel.
+        const px = piece.rotated ? piece.x + (1 - t) * w : piece.x + s * w, py = piece.rotated ? piece.y + (1 - s) * h : piece.y + (1 - t) * h;
+        const f = toMat(px, py, lift).sub(L).applyQuaternion(qInv);
+        flat.set([f.x, f.y, f.z], k * 3);
+        curved.set([pos.getX(k) - C.x, pos.getY(k) - C.y, pos.getZ(k) - C.z], k * 3);
+        flatNormal.set([up.x, up.y, up.z], k * 3);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(flat, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(flatNormal, 3));
+      geo.setAttribute('uv', uv); geo.setIndex(original.index);
+      geo.morphAttributes.position = [new THREE.BufferAttribute(curved, 3)];
+      geo.morphAttributes.normal = [original.attributes.normal];
+      m.geometry = geo; m.updateMorphTargets(); m.morphTargetInfluences[0] = 0;
+      m.quaternion.copy(q0); m.position.copy(L);
+      const spin = (index % 2 ? 1 : -1) * (.25 + (index % 3) * .12);
+      Object.assign(item, { original, geo, C, L, q0, spin, start: .85 + 1.7 * index / Math.max(1, items.length - 1), duration: 1.45 });
+    });
+    // Cuts without a panel mesh (tote handle strips) lift off as flat proxies.
+    const proxies = pieces.filter(p => !used.has(pieceKey(p))).map((piece, index) => {
+      const w = piece.occupiedPixelWidth || piece.width, h = piece.occupiedPixelHeight || piece.height;
+      const geo = new THREE.PlaneGeometry(w / W * matW / sx, h / H * matH), uvs = geo.attributes.uv;
+      for (let k = 0; k < uvs.count; k++) uvs.setXY(k, (piece.x + uvs.getX(k) * w) / W, 1 - (piece.y + (1 - uvs.getY(k)) * h) / H);
+      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: photoTexture, roughness: 1, side: THREE.DoubleSide, transparent: true }));
+      const L = toMat(piece.x + w / 2, piece.y + h / 2, .006); m.position.copy(L); m.rotation.x = -Math.PI / 2; m.castShadow = true; product.add(m);
+      const target = new THREE.Vector3(/left/.test(piece.panel) ? -.4 : .4, 1.75, /left/.test(piece.panel) ? -.35 : .35);
+      return { mesh: m, L, target, start: 1.6 + .9 * index / Math.max(1, pieces.length - used.size - 1), duration: 1.3 };
+    });
+    assembly = { started: performance.now(), items, proxies, others, stitches, decor, mat, matTexture, matMaterial, photoTexture, length: 5.9 };
+    camOverride = { rx: 1.02, dist: 7.6, ty: -1.05 };
+    lastInteraction = performance.now();
+    return true;
+  }
+  function stepAssembly(now) {
+    const a = assembly, t = a.frozenAt ?? (now - a.started) / 1000;
+    for (const it of a.items) {
+      const e = clamp((t - it.start) / it.duration, 0, 1), k = ease(e);
+      const p = new THREE.Vector3().lerpVectors(it.L, it.C, k);
+      p.y += Math.sin(Math.PI * k) * 1.25; p.z += Math.sin(Math.PI * k) * (it.mesh.userData.patch.back ? -.55 : .75);
+      const q = it.q0.clone().slerp(new THREE.Quaternion(), k), wobble = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), it.spin * Math.sin(Math.PI * k));
+      it.mesh.quaternion.copy(wobble.multiply(q)); it.mesh.position.copy(p);
+      it.mesh.morphTargetInfluences[0] = smooth(.35, 1, e);
+    }
+    for (const pr of a.proxies) {
+      const e = clamp((t - pr.start) / pr.duration, 0, 1), k = ease(e);
+      pr.mesh.position.lerpVectors(pr.L, pr.target, k); pr.mesh.position.y += Math.sin(Math.PI * k) * .8;
+      pr.mesh.rotation.set(-Math.PI / 2 * (1 - k), k * 2.4, 0); pr.mesh.scale.setScalar(1 - .75 * k); pr.mesh.material.opacity = 1 - smooth(.7, 1, e);
+    }
+    a.matMaterial.opacity = 1 - smooth(2.4, 3.7, t); a.mat.visible = a.matMaterial.opacity > .01;
+    const fly = ease(clamp((t - 3.0) / 1.1, 0, 1));
+    for (const g of a.others) { g.visible = t > 3.0; g.position.copy(g.userData.offset).multiplyScalar(3.4 * (1 - fly)); g.position.y += 2.2 * (1 - fly); }
+    for (const d of a.decor) d.visible = t > 3.7;
+    const sew = clamp((t - 3.8) / 1.6, 0, 1);
+    a.stitches.forEach((st, i) => { const local = clamp(sew * a.stitches.length * .35 - i * .35 + 1, 0, 1), count = st.geometry.attributes.position.count; st.geometry.setDrawRange(0, Math.floor(count * local / 2) * 2); });
+    const cam = ease(clamp((t - .55) / 3.4, 0, 1));
+    camOverride = { rx: 1.02 + (rotationX - 1.02) * cam, dist: 7.6 + (distance - 7.6) * cam, ty: -1.05 + (target.y - -1.05) * cam };
+    if (t >= a.length) finishAssembly();
+  }
+  function finishAssembly() {
+    if (!assembly) return;
+    const a = assembly; assembly = null; camOverride = null;
+    for (const it of a.items) {
+      it.mesh.geometry = it.original; it.geo.dispose();
+      delete it.mesh.morphTargetInfluences; delete it.mesh.morphTargetDictionary;
+      it.mesh.position.set(0, 0, 0); it.mesh.quaternion.identity();
+    }
+    for (const pr of a.proxies) { product?.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); }
+    for (const g of a.others) { g.visible = true; g.position.set(0, 0, 0); }
+    for (const d of a.decor) d.visible = true;
+    for (const st of a.stitches) st.geometry.setDrawRange(0, Infinity);
+    product?.remove(a.mat); a.mat.geometry.dispose(); a.matMaterial.dispose(); a.matTexture.dispose(); a.photoTexture.dispose();
+    options.onAssembly?.(false);
+  }
+  function stopAssembly() { if (assembly) finishAssembly(); }
+
   function resize() {
     const rect = container.getBoundingClientRect(), w = Math.max(1, rect.width), h = Math.max(1, rect.height || 560);
     camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); render();
@@ -351,10 +489,10 @@ export function createStudio(container, options = {}) {
   function render() {
     if (disposed) return;
     const aspectCompensation = camera.aspect < .8 ? 1.1 : 1;
-    const viewDistance = distance + explodeValue * 1.1;
-    const viewTarget = target.clone(); viewTarget.y += explodeValue * .22;
+    const viewDistance = (camOverride?.dist ?? distance) + explodeValue * 1.1, rx = camOverride?.rx ?? rotationX;
+    const viewTarget = target.clone(); if (camOverride) viewTarget.y = camOverride.ty; viewTarget.y += explodeValue * .22;
     const yaw = rotationY + idleAngle;
-    camera.position.set(Math.sin(yaw) * Math.cos(rotationX) * viewDistance * aspectCompensation, viewTarget.y + Math.sin(rotationX + .10) * viewDistance, Math.cos(yaw) * Math.cos(rotationX) * viewDistance * aspectCompensation);
+    camera.position.set(Math.sin(yaw) * Math.cos(rx) * viewDistance * aspectCompensation, viewTarget.y + Math.sin(rx + .10) * viewDistance, Math.cos(yaw) * Math.cos(rx) * viewDistance * aspectCompensation);
     camera.lookAt(viewTarget); renderer.render(scene, camera);
   }
   function animate(now) {
@@ -363,12 +501,13 @@ export function createStudio(container, options = {}) {
     const idleTarget = !reducedMotion && !dragging && now - lastInteraction > 4000 ? Math.sin(now * .0003) * .07 : 0;
     idleAngle += (idleTarget - idleAngle) * Math.min(1, dt * 3);
     explodeValue += ((exploded ? 1 : 0) - explodeValue) * (reducedMotion ? 1 : .10);
-    for (const part of groups) part.position.copy(part.userData.offset).multiplyScalar(explodeValue);
+    if (assembly) stepAssembly(now);
+    else for (const part of groups) part.position.copy(part.userData.offset).multiplyScalar(explodeValue);
     if (product && !reducedMotion) product.rotation.z = Math.sin(now * .00038) * .015;
     contact.scale.setScalar(1 + explodeValue * .15); contact.material.opacity = 1 - explodeValue * .25;
     render(); frame = requestAnimationFrame(animate);
   }
-  function onDown(e) { dragging = true; pointer = { x: e.clientX, y: e.clientY }; lastInteraction = performance.now(); canvas.style.cursor = 'grabbing'; canvas.setPointerCapture(e.pointerId); }
+  function onDown(e) { if (assembly) finishAssembly(); dragging = true; pointer = { x: e.clientX, y: e.clientY }; lastInteraction = performance.now(); canvas.style.cursor = 'grabbing'; canvas.setPointerCapture(e.pointerId); }
   function onMove(e) {
     if (!dragging) return;
     rotationY -= (e.clientX - pointer.x) * .006; rotationX = clamp(rotationX + (e.clientY - pointer.y) * .003, -.40, .50);
@@ -381,13 +520,16 @@ export function createStudio(container, options = {}) {
   update({}, []); resize(); frame = requestAnimationFrame(animate); options.onReady?.({ supported: true });
   return {
     update,
-    setExploded(value) { exploded = Boolean(value); lastInteraction = performance.now(); },
+    playAssembly() { const started = playAssembly(); if (started) options.onAssembly?.(true); return started; },
+    get assembling() { return Boolean(assembly); },
+    seekAssembly(seconds) { if (assembly) { assembly.frozenAt = seconds; stepAssembly(performance.now()); render(); } },
+    setExploded(value) { stopAssembly(); exploded = Boolean(value); lastInteraction = performance.now(); },
     setWireframe(value) { wireframe = Boolean(value); materials.forEach(m => { m.wireframe = wireframe; }); render(); },
     setPhoto(value) { sourcePhoto = value; update(savedPlan || {}, savedScraps); },
-    resetView() { rotationY = -.38; rotationX = .05; distance = 6.9; lastInteraction = performance.now(); render(); },
+    resetView() { stopAssembly(); rotationY = -.38; rotationX = .05; distance = 6.9; lastInteraction = performance.now(); render(); },
     capture() { render(); return canvas.toDataURL('image/png'); },
     dispose() {
-      disposed = true; cancelAnimationFrame(frame); observer.disconnect(); clearProduct(); weave.dispose(); shadowTexture.dispose();
+      stopAssembly(); disposed = true; cancelAnimationFrame(frame); observer.disconnect(); clearProduct(); weave.dispose(); shadowTexture.dispose();
       threadMat.dispose(); seamMat.dispose(); liningMat.dispose(); zipperMat.dispose(); floor.geometry.dispose(); floor.material.dispose(); contact.geometry.dispose(); contact.material.dispose();
       canvas.removeEventListener('pointerdown', onDown); canvas.removeEventListener('pointermove', onMove); canvas.removeEventListener('pointerup', onUp); canvas.removeEventListener('pointercancel', onUp); canvas.removeEventListener('wheel', onWheel);
       renderer.dispose(); canvas.remove();

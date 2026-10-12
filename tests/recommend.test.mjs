@@ -82,3 +82,13 @@ test('invalid measurement collection and invalid shared constraints fail explici
   assert.throws(() => recommendProducts(plentiful(), { seamAllowanceCm: 0 }), /Seam allowance/);
   assert.throws(() => recommendProducts(plentiful(), { size: -1 }), /Finished dimensions/);
 });
+
+test('product comparisons obey the maker’s grain-awareness toggle', () => {
+  const scraps = ['a', 'b', 'c'].map(id => scrap(id, 220, 230, 5, {
+    fabric: { pattern: 'stripe', confidence: .9, directional: true, grainDeviationDeg: 2, grainSource: 'pattern' },
+  }));
+  const locked = recommendProducts(scraps, { grainAware: true });
+  assert.ok(locked.every(r => r.plan.grainAware && r.plan.stats.grain.rotationLockedScraps.length === 3));
+  const unlocked = recommendProducts(scraps, { grainAware: false });
+  assert.ok(unlocked.every(r => r.plan.grainAware === false && r.plan.stats.grain.rotationLockedScraps.length === 0));
+});

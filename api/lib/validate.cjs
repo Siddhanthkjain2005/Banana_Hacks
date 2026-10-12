@@ -10,18 +10,44 @@ const SLIMSAM = { modelId: 'Xenova/slimsam-77-uniform', revision: '5850ab45f587c
 const PRODUCTS = ['tote', 'pouch', 'cushion'];
 const OBJECTIVES = ['balanced', 'waste', 'color'];
 const CONCEPT_STYLES = ['studio', 'lifestyle', 'flatlay', 'sketch'];
+const FABRIC_PATTERNS = ['solid', 'textured', 'stripe', 'check', 'dot', 'print'];
 const plainText = (value, max) => typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
 
 function validateOptions(rawOptions = {}) {
-  exactKeys(rawOptions, ['product', 'seamAllowanceCm', 'rotation', 'size', 'objective'], 'Options');
+  exactKeys(rawOptions, ['product', 'seamAllowanceCm', 'rotation', 'size', 'objective', 'grainAware', 'searchSeed', 'grid'], 'Options');
   const product = rawOptions.product ?? 'tote';
   const objective = rawOptions.objective ?? 'balanced';
   if (!PRODUCTS.includes(product)) bad('Product must be tote, pouch, or cushion.');
   if (!OBJECTIVES.includes(objective)) bad('Objective must be balanced, waste, or color.');
   if (rawOptions.rotation !== undefined && typeof rawOptions.rotation !== 'boolean') bad('Rotation must be true or false.');
-  return { product, objective, rotation: rawOptions.rotation ?? true,
+  if (rawOptions.grainAware !== undefined && typeof rawOptions.grainAware !== 'boolean') bad('Grain awareness must be true or false.');
+  const search = {};
+  if (rawOptions.searchSeed !== undefined || rawOptions.grid !== undefined) {
+    search.searchSeed = numberInRange(rawOptions.searchSeed, 0, 2 ** 32 - 1, 'Layout seed', true);
+    exactKeys(rawOptions.grid, ['cols', 'rows'], 'Layout grid');
+    search.grid = { cols: numberInRange(rawOptions.grid.cols, 1, 8, 'Layout columns', true), rows: numberInRange(rawOptions.grid.rows, 1, 8, 'Layout rows', true) };
+  }
+  return { product, objective, rotation: rawOptions.rotation ?? true, grainAware: rawOptions.grainAware ?? true,
+    ...search,
     seamAllowanceCm: numberInRange(rawOptions.seamAllowanceCm ?? .7, .4, 1.5, 'Seam allowance'),
     size: numberInRange(rawOptions.size ?? 1, .5, 1.25, 'Design size multiplier') };
+}
+
+/**
+ * Optional FabricNet summary for one scrap. It is client-reported metadata
+ * (photos never reach the server), used only to lock rotation for directional
+ * patterns and to prefer on-grain fabric. It cannot add material.
+ */
+function validateFabric(raw) {
+  if (raw === undefined) return undefined;
+  exactKeys(raw, ['pattern', 'confidence', 'directional', 'grainDeviationDeg', 'grainSource'], 'Fabric analysis');
+  if (raw.pattern !== null && !FABRIC_PATTERNS.includes(raw.pattern)) bad('Fabric pattern must be a FabricNet class or null.');
+  const confidence = numberInRange(raw.confidence ?? 0, 0, 1, 'Fabric confidence');
+  if (typeof raw.directional !== 'boolean') bad('Fabric directional must be true or false.');
+  const grainDeviationDeg = raw.grainDeviationDeg === null || raw.grainDeviationDeg === undefined ? null : numberInRange(raw.grainDeviationDeg, -45, 45, 'Grain deviation');
+  if (![null, undefined, 'pattern', 'edges'].includes(raw.grainSource)) bad('Grain source must be pattern, edges, or null.');
+  if (grainDeviationDeg !== null && !raw.grainSource) bad('A grain estimate needs its source.');
+  return { pattern: raw.pattern, confidence, directional: raw.directional, grainDeviationDeg, grainSource: grainDeviationDeg === null ? null : raw.grainSource };
 }
 
 function validateProvenance(raw, width, height) {
@@ -54,7 +80,8 @@ function measureSource(source, excluded, budget = { pixels: 0, scraps: 0 }) {
   const excludedSet = new Set(excluded), seenIds = new Set(), occupied = new Uint8Array(width * height);
   let detectedAreaPx = 0;
   const scraps = source.scraps.map((s, index) => {
-    exactKeys(s, ['id', 'label', 'color', 'bbox', 'maskRle', 'usable'], `Scrap ${index + 1}`);
+    exactKeys(s, ['id', 'label', 'color', 'bbox', 'maskRle', 'usable', 'fabric'], `Scrap ${index + 1}`);
+    const fabric = validateFabric(s.fabric);
     if (typeof s.id !== 'string' || !SCRAP_ID_RE.test(s.id) || seenIds.has(s.id)) bad('Scrap IDs must be unique letters, numbers, underscores, or hyphens (1–64 characters).');
     seenIds.add(s.id);
     if (s.label !== undefined && !plainText(s.label, 80)) bad('Scrap labels must be text of at most 80 characters without control characters.');
@@ -83,7 +110,7 @@ function measureSource(source, excluded, budget = { pixels: 0, scraps: 0 }) {
     }
     detectedAreaPx += areaPx;
     const touchesFrame = x <= 1 || y <= 1 || x + bw >= width - 1 || y + bh >= height - 1;
-    return { id: s.id, label: s.label || s.id, color: s.color.toLowerCase(), bbox: { x, y, width: bw, height: bh }, mask,
+    return { id: s.id, label: s.label || s.id, color: s.color.toLowerCase(), bbox: { x, y, width: bw, height: bh }, mask, ...(fabric ? { fabric } : {}),
       usable: s.usable !== false && !excludedSet.has(s.id) && !touchesFrame, pixelsPerCm,
       areaPx, areaCm2: areaPx / pixelsPerCm ** 2, contour: [],
       quality: { touchesBorder: touchesFrame, issues: touchesFrame ? ['Photographed frame edge is excluded from automatic cutting.'] : [] } };
@@ -146,6 +173,12 @@ function validateChainOptions(raw) {
     minSize: numberInRange(raw.minSize ?? .5, .5, 1.25, 'Minimum chained design size') };
 }
 
+function validateOptimizeOptions(raw) {
+  if (raw === undefined) return { budgetMs: 6000, seed: 1 };
+  exactKeys(raw, ['budgetMs', 'seed'], 'Optimize options');
+  return { budgetMs: numberInRange(raw.budgetMs ?? 6000, 500, 12000, 'Search budget', true), seed: numberInRange(raw.seed ?? 1, 1, 2 ** 31 - 1, 'Search seed', true) };
+}
+
 /**
  * A community pool combines derived masks from several photographs, each with
  * its own calibration. Scrap IDs are namespaced per donor so cuts stay traceable.
@@ -173,5 +206,5 @@ function validatePoolPayload(payload) {
   return { donors, scraps, options, impact: validateImpactOptions(payload.impact) };
 }
 
-module.exports = { validateJobPayload, validatePoolPayload, validateImpactOptions, validateConceptOptions, validateChainOptions,
+module.exports = { validateJobPayload, validatePoolPayload, validateImpactOptions, validateConceptOptions, validateChainOptions, validateOptimizeOptions,
   constants: { MAX_PIXELS, MAX_SCRAPS, MAX_POOL_SOURCES, PRODUCTS, OBJECTIVES, CONCEPT_STYLES, SLIMSAM } };

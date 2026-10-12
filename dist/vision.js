@@ -107,6 +107,34 @@ function components(mask, w, h, minimumArea) {
   return result.sort((a, b) => b.areaPx - a.areaPx);
 }
 
+/**
+ * Fill small background-coloured regions fully enclosed by one scrap, such as
+ * light polka dots or gingham squares that match the surface colour. Holes
+ * larger than maxHolePx, regions touching the box edge, and pixels that belong
+ * to any other region stay empty. Returns the number of pixels filled.
+ */
+function fillEnclosedHoles(localMask, bbox, globalMask, imageWidth, maxHolePx) {
+  const { width: w, height: h } = bbox, seen = new Uint8Array(w * h), queue = new Int32Array(w * h);
+  let filled = 0;
+  for (let start = 0; start < seen.length; start++) {
+    if (localMask[start] || seen[start]) continue;
+    let read = 0, write = 1, open = false, foreign = false;
+    queue[0] = start; seen[start] = 1;
+    while (read < write) {
+      const i = queue[read++], x = i % w, y = Math.floor(i / w);
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) open = true;
+      if (globalMask[(bbox.y + y) * imageWidth + bbox.x + x]) foreign = true;
+      for (const n of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (n >= 0 && !localMask[n] && !seen[n]) { seen[n] = 1; queue[write++] = n; }
+      }
+    }
+    if (open || foreign || write > maxHolePx) continue;
+    for (let j = 0; j < write; j++) localMask[queue[j]] = 1;
+    filled += write;
+  }
+  return filled;
+}
+
 function simplifyPolyline(points, tolerance = 1.4) {
   if (points.length < 7) return points;
   const keep = new Uint8Array(points.length); keep[0] = keep[points.length - 1] = 1;
@@ -230,7 +258,8 @@ export function analyzeImage(imageData, options = {}) {
   mask = morphology(morphology(mask, width, height, true), width, height, false);
   const found = components(mask, width, height, minimumArea), cleanMask = new Uint8Array(mask.length);
   const warnings = [], scraps = found.slice(0, 48).map((component, n) => {
-    const { bbox, mask: localMask, areaPx } = component, rgbSum = [0, 0, 0], labs = [], histogram = new Map();
+    const { bbox, mask: localMask } = component, rgbSum = [0, 0, 0], labs = [], histogram = new Map();
+    const holeFilledPx = fillEnclosedHoles(localMask, bbox, mask, width, Math.round(1.5 * pixelsPerCm ** 2)), areaPx = component.areaPx + holeFilledPx;
     let fillPixels = 0;
     for (let y = 0; y < bbox.height; y++) for (let x = 0; x < bbox.width; x++) {
       if (!localMask[y * bbox.width + x]) continue;
@@ -251,13 +280,14 @@ export function analyzeImage(imageData, options = {}) {
     const issues = [];
     if (component.touchesBorder) issues.push('Touches photo edge; complete boundary is unknown.');
     if (contrastDeltaE < 18) issues.push('Low background contrast; inspect this boundary before cutting.');
-    if (fillPixels / areaPx > .025) issues.push('Texture or small holes were bridged by cleanup; inspect before cutting.');
+    if (holeFilledPx) issues.push(`${Math.round(holeFilledPx / pixelsPerCm ** 2 * 10) / 10} cm² of small enclosed background-coloured motifs were treated as fabric; check for real holes.`);
+    else if (fillPixels / areaPx > .025) issues.push('Texture or small holes were bridged by cleanup; inspect before cutting.');
     return {
       id: `scrap-${n + 1}`, label: `${colorName(rgb)} ${n + 1}`, color, rgb: rgb.map(Math.round),
       areaPx, areaCm2: round(areaPx / pixelsPerCm ** 2), usableAreaPx, usableAreaCm2: round(usableAreaPx / pixelsPerCm ** 2),
       bbox, contour: traceContour(localMask, bbox), mask: localMask, usableMask, pixelsPerCm,
       coverage: round(areaPx / (bbox.width * bbox.height), 3), usable: !component.touchesBorder && usableAreaPx >= minimumArea,
-      quality: { contrastDeltaE: round(contrastDeltaE, 1), colorVariationDeltaE: round(colorVariance, 1), touchesBorder: component.touchesBorder, cleanupFilledPixels: fillPixels, issues },
+      quality: { contrastDeltaE: round(contrastDeltaE, 1), colorVariationDeltaE: round(colorVariance, 1), touchesBorder: component.touchesBorder, cleanupFilledPixels: fillPixels, enclosedMotifPixels: holeFilledPx, issues },
       clusters: [...histogram.entries()].sort((a, b) => b[1] - a[1]).map(([cluster, count]) => ({ cluster, share: round(count / Math.max(1, labs.length), 3) })),
     };
   });
@@ -427,10 +457,37 @@ function findPlacement(state, w, h, reverse = false, remainingLike = 1) {
   return null;
 }
 
-function tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals) {
+/** Grain rules derived from client-side FabricNet analysis, when present. */
+function grainRules(scrap, grainAware) {
+  const fabric = grainAware ? scrap.fabric : null, deviation = Number.isFinite(fabric?.grainDeviationDeg) ? fabric.grainDeviationDeg : null;
+  return { lockRotation: Boolean(fabric?.directional), deviation, penalty: deviation !== null && Math.abs(deviation) > 7 ? Math.abs(deviation) * 12000 : 0 };
+}
+function grainNote(rules, fabric) {
+  if (rules.deviation === null && !rules.lockRotation) return null;
+  const parts = [];
+  if (rules.deviation !== null) {
+    const d = Math.abs(rules.deviation), sign = rules.deviation > 0 ? '+' : rules.deviation < 0 ? '−' : '';
+    parts.push(`Estimated grain ${sign}${round(d, 1)}° from the cut edges (${fabric.grainSource === 'pattern' ? 'pattern spectrum' : 'straight cut edges'}).`);
+    parts.push(d <= 3 ? 'On grain.' : d <= 7 ? 'Slightly off grain; align by hand.' : 'Off grain: this cut lies partly on the bias and may stretch.');
+  }
+  if (rules.lockRotation) parts.push('Directional pattern: rotation locked so it runs the same way on every panel.');
+  return parts.join(' ') + ' Verify on the physical fabric.';
+}
+
+/** Small deterministic PRNG for seeded layout exploration (server deep search). */
+function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+function tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals, grainAware = true, random = null) {
   const states = scraps.map(scrap => ({ scrap, integral: sharedIntegrals.get(scrap.id), placed: [], used: 0 }));
   const panelPriority = id => id === 'front' ? 0 : id.startsWith('back') ? 1 : 2;
+  // With a seed, cuts of equal size are visited in a shuffled order and scrap
+  // preferences receive bounded noise; every placement is still mask-checked.
+  const jitter = random ? new Map(patches.map(p => [p.id, random()])) : null;
   const sorted = [...patches].sort((a, b) => b.cutWidthCm * b.cutHeightCm - a.cutWidthCm * a.cutHeightCm
+    || (jitter ? jitter.get(a.id) - jitter.get(b.id) : 0)
     || panelPriority(a.panel) - panelPriority(b.panel) || a.row - b.row || a.col - b.col || a.id.localeCompare(b.id));
   const pieces = [], missing = [], colorUse = new Map();
   const dimensionKey = p => `${round(p.cutWidthCm, 5)}:${round(p.cutHeightCm, 5)}`;
@@ -440,15 +497,15 @@ function tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals)
     const remainingLike = remainingCounts.get(dimensionKey(patch));
     let best = null;
     for (const state of states) {
-      const ppcm = state.scrap.pixelsPerCm;
-      for (const rotated of rotation && Math.abs(patch.cutWidthCm - patch.cutHeightCm) > .001 ? [false, true] : [false]) {
+      const ppcm = state.scrap.pixelsPerCm, rules = state.rules ||= grainRules(state.scrap, grainAware);
+      for (const rotated of rotation && !rules.lockRotation && Math.abs(patch.cutWidthCm - patch.cutHeightCm) > .001 ? [false, true] : [false]) {
         const width = (rotated ? patch.cutHeightCm : patch.cutWidthCm) * ppcm;
         const height = (rotated ? patch.cutWidthCm : patch.cutHeightCm) * ppcm;
         const candidate = findPlacement(state, Math.ceil(width - 1e-7), Math.ceil(height - 1e-7), reverse, remainingLike);
         if (!candidate) continue;
         const remaining = state.scrap.usableAreaPx - state.used;
         const preference = objective === 'color' ? (colorUse.get(state.scrap.id) || 0) * 100000 + remaining : remaining;
-        const score = preference - candidate.capacity * 50000 + candidate.y * .02 + candidate.x * .001;
+        const score = preference + rules.penalty - candidate.capacity * 50000 + candidate.y * .02 + candidate.x * .001 + (random ? random() * 90000 : 0);
         if (!best || score < best.score) best = { state, candidate, score, rotated, width, height };
       }
     }
@@ -457,7 +514,8 @@ function tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals)
     const { state, candidate, rotated, width, height } = best;
     state.placed.push(candidate); state.used += candidate.w * candidate.h;
     colorUse.set(state.scrap.id, (colorUse.get(state.scrap.id) || 0) + 1);
-    pieces.push({ ...patch, scrapId: state.scrap.id, color: state.scrap.color, rotated,
+    const note = grainNote(state.rules, state.scrap.fabric);
+    pieces.push({ ...patch, ...(note ? { grainConstraint: note, grainDeviationDeg: state.rules.deviation } : {}), scrapId: state.scrap.id, color: state.scrap.color, rotated,
       x: state.scrap.bbox.x + candidate.x, y: state.scrap.bbox.y + candidate.y, width, height,
       widthCm: width / state.scrap.pixelsPerCm, heightCm: height / state.scrap.pixelsPerCm, pixelsPerCm: state.scrap.pixelsPerCm,
       occupiedPixelWidth: candidate.w, occupiedPixelHeight: candidate.h,
@@ -475,7 +533,9 @@ export function optimizePattern(inputScraps, options = {}) {
   const product = options.product || 'tote', seamAllowanceCm = Number(options.seamAllowanceCm ?? .7);
   if (!Number.isFinite(seamAllowanceCm) || seamAllowanceCm < .2 || seamAllowanceCm > 3) throw new Error('Seam allowance must be between 0.2 and 3 centimetres.');
   const objective = ['balanced', 'waste', 'color'].includes(options.objective) ? options.objective : 'balanced';
-  const rotation = options.rotation !== false;
+  const rotation = options.rotation !== false, grainAware = options.grainAware !== false;
+  if (options.searchSeed !== undefined && (!Number.isInteger(options.searchSeed) || options.searchSeed < 0)) throw new Error('Search seed must be a non-negative integer.');
+  const random = options.searchSeed !== undefined ? seededRandom(options.searchSeed) : null;
   const definition = patternDefinition(product, options.size, seamAllowanceCm);
   const scraps = (inputScraps || []).filter(s => s.usable !== false && s.mask && Number.isFinite(s.pixelsPerCm) && s.pixelsPerCm > 0);
   scraps.forEach(s => { if (!s.usableMask) s.usableMask = morphology(s.mask, s.bbox.width, s.bbox.height, false); if (!s.usableAreaPx) s.usableAreaPx = s.usableMask.reduce((sum, p) => sum + p, 0); });
@@ -493,7 +553,7 @@ export function optimizePattern(inputScraps, options = {}) {
     if (selected && selected.missing.length === 0 && requiredAreaCm2 >= selected.requiredAreaCm2 && objective !== 'color') continue;
     for (const reverse of [false, true]) {
       attempts++;
-      const packed = tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals);
+      const packed = tryPack(scraps, patches, rotation, objective, reverse, sharedIntegrals, grainAware, random);
       const candidate = { ...packed, requiredAreaCm2, grid: { cols, rows }, patchCount: patches.length };
       const ratio = packed.pieces.length / patches.length, selectedRatio = selected ? selected.pieces.length / selected.patchCount : -1;
       if (!selected || ratio > selectedRatio + 1e-8 || Math.abs(ratio - selectedRatio) < 1e-8 && (packed.missing.length < selected.missing.length || packed.missing.length === selected.missing.length && requiredAreaCm2 < selected.requiredAreaCm2)) selected = candidate;
@@ -521,15 +581,19 @@ export function optimizePattern(inputScraps, options = {}) {
   if (!valid) warnings.push('Geometric validation failed; this plan must not be cut.');
   if (selected.requiredAreaCm2 > availableAreaCm2) warnings.push('Required cut area exceeds the detected usable fabric area.');
   if (!rotation) warnings.push('Rotation was disabled. Grain direction still needs manual verification.');
+  const lockedScraps = grainAware ? scraps.filter(s => s.fabric?.directional).map(s => s.id) : [];
+  const offGrainCuts = selected.pieces.filter(p => Number.isFinite(p.grainDeviationDeg) && Math.abs(p.grainDeviationDeg) > 7).length;
+  if (offGrainCuts) warnings.push(`${offGrainCuts} cut${offGrainCuts === 1 ? '' : 's'} come from fabric estimated more than 7° off grain; expect some bias stretch.`);
   return {
     version: '1.0', product, title: definition.dimensions.title, feasible, validated: valid, objective, rotation,
-    seamAllowanceCm, dimensions: definition.dimensions, panels: definition.panels, grid: selected.grid,
+    seamAllowanceCm, grainAware, dimensions: definition.dimensions, panels: definition.panels, grid: selected.grid,
     pieces: selected.pieces, unplaced: selected.missing, assembly: definition.assembly, supplies: definition.supplies, warnings,
     stats: { requiredAreaCm2: round(selected.requiredAreaCm2), usedAreaCm2: round(usedAreaCm2), availableAreaCm2: round(availableAreaCm2),
       utilization: availableAreaCm2 ? usedAreaCm2 / availableAreaCm2 : 0, remainingAreaCm2: round(Math.max(0, availableAreaCm2 - usedAreaCm2)),
       unplaced: selected.missing.length, placed: selected.pieces.length, totalPieces: selected.patchCount, scrapsUsed: new Set(selected.pieces.map(p => p.scrapId)).size,
       estimatedFinishedAreaCm2: round(definition.panels.reduce((sum, p) => sum + p.widthCm * p.heightCm, 0)), searchAttempts: attempts,
-      method: 'Deterministic rectangular patch nesting on conservative pixel masks; no global-optimality claim.',
+      grain: { aware: grainAware, rotationLockedScraps: lockedScraps, offGrainCuts, analyzedScraps: scraps.filter(s => s.fabric).length },
+      method: random ? `Seeded rectangular patch nesting (seed ${options.searchSeed}) on conservative pixel masks; no global-optimality claim.` : 'Deterministic rectangular patch nesting on conservative pixel masks; no global-optimality claim.',
     },
   };
 }
@@ -559,7 +623,7 @@ export function exportPlanJSON(plan, analysis) {
   const cleanScraps = (analysis?.scraps || []).map(({ mask, usableMask, ...scrap }) => scrap);
   return JSON.stringify({ format: 'rethread-cutting-report', version: 1, createdAt: new Date().toISOString(),
     measurement: analysis ? { widthPx: analysis.width, heightPx: analysis.height, sceneWidthCm: analysis.sceneWidthCm, sceneHeightCm: analysis.sceneHeightCm, pixelsPerCm: analysis.pixelsPerCm, background: analysis.background, metrics: analysis.metrics, warnings: analysis.warnings, scraps: cleanScraps } : null,
-    analysisProvenance: analysis?.modelProvenance || { engine: 'color-vision' }, neuralRefinement: analysis?.neuralRefinement || null,
-    plan, limitations: ['Flat top-down photograph and accurate scene width required.', 'Outlines and physical dimensions are image-derived estimates; inspect every cut boundary.', 'Fabric type, durability, stretch, grain, and hidden holes are not verified.', 'The nesting heuristic finds validated layouts, not provably optimal layouts.'],
+    analysisProvenance: analysis?.modelProvenance || { engine: 'color-vision' }, neuralRefinement: analysis?.neuralRefinement || null, fabricIntel: analysis?.fabricIntel || null,
+    plan, limitations: ['Flat top-down photograph and accurate scene width required.', 'Outlines and physical dimensions are image-derived estimates; inspect every cut boundary.', 'Fibre type, durability, stretch, and hidden holes are not verified. Pattern class and grain angle are image estimates (FabricNet and cut-edge orientation).', 'The nesting heuristic finds validated layouts, not provably optimal layouts.'],
   }, null, 2);
 }

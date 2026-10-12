@@ -4,7 +4,8 @@ const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 const { ApiError, bad, object, hashToken, deriveShareToken, header, tokenMatches, TOKEN_RE } = require('./http.cjs');
-const { validateJobPayload, validatePoolPayload, validateImpactOptions, validateConceptOptions, validateChainOptions, constants: limits } = require('./validate.cjs');
+const { validateJobPayload, validatePoolPayload, validateImpactOptions, validateConceptOptions, validateChainOptions, validateOptimizeOptions, constants: limits } = require('./validate.cjs');
+const { deepOptimize } = require('./optimize.cjs');
 const { planAnalytics, arrangePatches } = require('./analytics.cjs');
 const { estimateImpact } = require('./impact.cjs');
 const { planChain } = require('./chain.cjs');
@@ -14,14 +15,14 @@ const { createImageGenerator } = require('./imagegen.cjs');
 const { buildPacket } = require('./packet.cjs');
 const { openApiDocument } = require('./openapi.cjs');
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_PIXELS = limits.MAX_PIXELS;
 const CONTAINER = 'rethread-plans';
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const RATE = { all: 60, post: 10, render: 3 };
-const FEATURES = ['jobs', 'share-links', 'plan', 'chain', 'pool', 'concept', 'packet', 'openapi'];
+const RATE = { all: 90, post: 24, render: 3 };
+const FEATURES = ['jobs', 'share-links', 'plan', 'chain', 'pool', 'concept', 'packet', 'optimize', 'fabricnet-grain', 'openapi'];
 const SECURITY_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' };
 
 const unavailable = () => new ApiError(503, 'STORAGE_UNAVAILABLE', 'Private job storage is unavailable. No saved job is confirmed.');
@@ -271,6 +272,16 @@ function createHandler(configuration = {}) {
           const chain = planChain(measured, core, chainOptions, checkDeadline);
           if (!chain.validation.validated) throw geometryFailed();
           return { service: 'rethread-geometry', version: VERSION, image: measured.image, options: measured.options, chainOptions, ...chain, impact: estimateImpact(chain.summary.usedAreaCm2, impactOptions) };
+        }));
+      },
+      'POST optimize': async () => {
+        const payload = parseBody(req), measured = validateJobPayload(payload, ['optimize', 'impact']);
+        const search = validateOptimizeOptions(payload.optimize), impactOptions = validateImpactOptions(payload.impact);
+        return respond(200, await compute(core => {
+          const result = deepOptimize(core, measured.scraps, measured.options, search, checkDeadline);
+          if (!result.plan.validated) throw geometryFailed();
+          return { service: 'rethread-geometry', version: VERSION, image: measured.image, options: measured.options, ...result,
+            analytics: planAnalytics(result.plan, measured.scraps), arrangement: arrangePatches(result.plan), impact: estimateImpact(result.plan.stats.usedAreaCm2, impactOptions), verification: verificationNote };
         }));
       },
       'POST pool': async () => {

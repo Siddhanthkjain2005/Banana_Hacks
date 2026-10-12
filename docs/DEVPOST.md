@@ -4,70 +4,54 @@ Fabric leftovers often outlive the projects that created them. We asked: **“Wh
 
 ## What it does
 
-Photograph separated scraps, enter the scene width, and generate a material inventory, validated cutting layout, and textured 3D concept. Local **SlimSAM neural review** refines selected boundaries. Compare totes, pouches, and cushions; adjust size, seams, and rotation; exclude unsuitable scraps; inspect exploded assembly; and export SVG, JSON, TXT, or PNG files.
+Photograph separated scraps and enter the scene width. ReThread inventories materials, validates a cutting layout, and animates the actual cuts lifting off your photo into a textured 3D tote, pouch, or cushion.
 
-Six labeled synthetic collections support exploration. Private Azure receipts preserve verified plans.
+**FabricNet**, our locally trained CNN, classifies solid, textured, stripe, check, dots, and print. Pattern orientation and straight cut edges inform estimated grain direction: directional stripes lock rotation, and off-grain scraps receive a planning penalty. **SlimSAM** offers optional, reviewed boundary refinement. Neither model establishes physical sewing suitability.
 
-The **v1.2 API** adds leftover project chains, calibrated donor pools, colour-aware sewing layouts, printable A4/Letter maker packets, and read-only sharing. Its optional image-provider adapter accepts a layout-derived design map; external concept generation is not configured on the public demo.
+The **Colour DNA** view explores image colours in 3D CIELAB space. The **Zero-waste lab** chains projects from exact leftovers, arranges interchangeable patches, searches deeper layouts, pools donors’ independently calibrated scraps, generates design maps and printable A4/Letter packets, and supports private saving and read-only sharing. Source photographs stay in the browser.
 
 ## How we built it
 
-HTML, CSS, JavaScript, Web Workers, and Three.js provide the studio. CIELAB k-means learns image colours:
+HTML, CSS, JavaScript, Web Workers, and Three.js power the studio. CIELAB clustering minimizes
 
 $$
 J=\sum_{p\in S}\min_k\|\mathrm{Lab}(p)-\mu_k\|_2^2.
 $$
 
-Background estimation, morphology, and connected components produce masks. Pinned, SHA-256-verified INT8 SlimSAM weights run locally. Human-reviewed predictions conservatively intersect the measured mask:
+Morphology and connected components identify scraps. Calibration converts foreground pixels into area:
 
 $$
-M_{\mathrm{refined}}=M_{\mathrm{vision}}\cap M_{\mathrm{SlimSAM}}.
+s=\frac{W_{px}}{W_{cm}},\qquad A=\frac{N}{s^2}.
 $$
 
-With image width Wpx, measured scene width Wcm, and foreground pixels N:
+FabricNet has three convolution blocks, global average pooling, a dense layer, and six-way softmax: **7,286 parameters**. We implemented backpropagation and Adam in JavaScript, training on approximately 108,000 synthesized textile patches with randomized colours, lighting, noise, scale, and rotation. Cross-entropy trains the classifier:
 
 $$
-s=\frac{W_{\mathrm{px}}}{W_{\mathrm{cm}}},\qquad A_{\mathrm{cm}^2}=\frac{N}{s^2}.
+\mathcal L=-\frac1B\sum_i\log\operatorname{softmax}(f_\theta(x_i))_{y_i}.
 $$
 
-Every cut must stay inside its assigned usable mask; cuts sharing fabric cannot overlap:
+Held-out synthetic accuracy is **96.3%**; real-photo accuracy remains unmeasured. Projection-profile searches estimate pattern orientation. Every cut must satisfy mask containment and non-overlap:
 
 $$
-R_i\subseteq M_{\mathrm{usable},s(i)},\qquad \operatorname{int}(R_i)\cap\operatorname{int}(R_j)=\varnothing\quad(i\ne j,\ s(i)=s(j)).
+R_i\subseteq M_{usable,s(i)},\quad \operatorname{int}(R_i)\cap\operatorname{int}(R_j)=\varnothing\quad(i\ne j,\ s(i)=s(j)).
 $$
 
-Seam allowance is included in geometric utilization:
-
-$$
-\eta=100\frac{A_{\mathrm{placed\ cuts}}}{A_{\mathrm{usable\ fabric}}}.
-$$
-
-Chaining removes cuts and preserves the engine's conservative erosion:
-
-$$
-\operatorname{erode}(M-R)=\operatorname{erode}(M)-\operatorname{dilate}(R).
-$$
-
-All chained cuts are independently checked against original masks. Colour arrangement swaps identically sized cuts between sewing slots without moving fabric cuts.
-
-Azure Functions validates geometry and writes private Blob receipts. Hashed capabilities, conditional writes, and retained idempotency keys protect access and recover interrupted saves. Photos stay local.
+Deep search uses bounded, seeded restarts; it does not guarantee optimality. Azure Functions revalidates geometry and grain constraints, while private Blob storage uses hashed capabilities, expiry, and idempotent retries. OpenAPI describes every route.
 
 ## Challenges we ran into
 
-Bounding boxes include empty space, so pixel containment was essential. Shadows, calibration, and neural predictions needed conservative boundaries and human review. Fragmented leftovers made failed searches expensive; fit pre-checks, capped bonus grids, and a time budget preserve complete, validated projects. Provider deadlines must also cover stalled response bodies.
+Light motifs resembled the background, creating false holes. We fill small enclosed regions and flag them for inspection. Checks confused early grain estimators; projection profiles improved recovery. Training without a framework required checking our gradients. Asynchronous lab results also needed invalidation when the maker changed plans.
 
 ## Accomplishments that we're proud of
 
-**58 automated tests pass.** CI exercises the backend on bundled samples. Real neural inference recalculated a complete 26-cut tote. Azure verification covers durable saves, replay recovery, private retrieval, wrong-key rejection, and deletion. The Denim API demonstration increased geometric utilization from 64.5% to 76.6% with a tote-and-pouch chain.
+**72 automated tests pass**, covering model hashes, inference parity, held-out accuracy, grain rules, geometry, storage, and sharing. Pattern mix’s leftover chain raises utilization from **68.5% to 76.2%**. Pooling enables projects donors cannot complete alone.
 
 ## What we learned
 
-Useful AI needs traceable consequences: predicted pixels must affect cutting decisions. Utilization measures geometry; it does not establish environmental savings, fabric strength, or sewing suitability. Clear calibration and honest incomplete results build trust.
+Useful AI changes a concrete decision. Synthetic benchmarks require honest limits. Geometric utilization and assumption-based environmental estimates need physical validation.
 
 ## What's next for Oddment Guild
 
-Bring chains, pools, and maker packets into the studio interface; run repair-café trials; and add perspective correction, grain constraints, and textile benchmarks.
+Measure FabricNet on real photos, trial patterns with repair cafés, correct perspective, and support cuts aligned with skewed grain.
 
-**Team:** Siddhanth K Jain, Adithya P, Kamma Rohan, Dinesh Kulkarni.
-
-**Credits:** SlimSAM, Transformers.js, ONNX Runtime, Three.js, Azure SDK, Codex and Claude assistance, and ImageGen samples; licenses and provenance are included.
+**Team:** Siddhanth K Jain, Adithya P, Kamma Rohan, Dinesh Kulkarni. AI coding assistants supported development; ImageGen supplied three labelled samples. Third-party licenses and provenance are included.

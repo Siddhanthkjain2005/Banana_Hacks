@@ -29,6 +29,7 @@ The `rethread-plans` container is created privately. If an existing container pe
 | `GET /api/ready` | Yes | Probes the private Blob container; `storageReady: true` only after connectivity and private-access checks pass. |
 | `GET /api/openapi.json` | No | OpenAPI 3.1 document for every route. |
 | `POST /api/plan` | No | Validated plan, product comparison, per-scrap analytics, colour-aware arrangement, and impact estimate. Nothing is saved. |
+| `POST /api/optimize` | No | Deep layout search: seeded multi-start restarts for the same product and grid within a time budget. |
 | `POST /api/chain` | No | Zero-waste project chain over the leftover offcuts. |
 | `POST /api/pool` | No | Community fabric pool across 2–8 photographed sources. |
 | `POST /api/concept` | No | Design map PNG and engineered prompt; an AI render when configured. |
@@ -81,6 +82,14 @@ Same body as a job, plus optional `impact`. Returns:
 - `arrangement`: cuts with identical dimensions are interchangeable, so a deterministic best-improvement swap search reassigns them to grid slots. It maximizes CIELAB ΔE between neighbouring patches and avoids sewing a scrap beside itself. Cut positions on the fabric never change. On the Denim repair sample, same-scrap neighbours fall from 7 to 0 and mean neighbouring ΔE rises from 21.2 to 29.5.
 - `impact`: measured cut area, mass at an assumed fabric weight, and an avoided-new-fabric CO2e estimate. See [Impact assumptions](#impact-assumptions).
 
+### `POST /api/optimize`
+
+Same body, plus optional `optimize: { budgetMs: 500–12000 (default 6000), seed: 1–2³¹−1 (default 1) }`. The browser's deterministic plan is the baseline. Restarts keep its grid, visit equal-size cuts in a seeded order, and add bounded noise to scrap preferences; every candidate is produced and validated by the same mask-containment engine. Candidates are ranked by: complete and valid, cuts placed, the largest rectangle left in any offcut, scraps left whole, then total usable leftover. The response has `baseline.score`, the best `plan` and `score`, `improved`, the winning `seed`, `search` (tries, improvements, elapsed time, trace), plus analytics, arrangement, and impact for the best plan. The same seed reproduces the same search. On the Denim repair sample, a 3 s search keeps all 26 tote cuts and grows the largest reusable offcut from 11.1 × 18.9 cm to 19.2 × 18.5 cm. It is a heuristic, not an optimality proof.
+
+### FabricNet summaries and grain rules
+
+Each scrap may include `fabric: { pattern, confidence, directional, grainDeviationDeg, grainSource }`, produced by the browser's FabricNet model and grain estimator (`pattern` is solid, textured, stripe, check, dot, print, or null; `grainDeviationDeg` is −45…45 or null; `grainSource` is pattern, edges, or null). `options.grainAware` (default true) applies the same rules as the browser: directional scraps get no rotated cuts, and scraps more than 7° off grain are used last. Each cut then carries a grain note and `plan.stats.grain` summarises the effect. The summary is client-reported metadata, like SlimSAM provenance; it cannot add material, and unknown or out-of-range fields return `400`.
+
 ### `POST /api/chain`
 
 Same body, plus optional `chain: { maxProjects: 1–5 (default 3), minSize: 0.5–1.25 (default 0.5) }`. The first project is exactly the `/api/plan` result. Each later project is the complete, validated product and size that uses the most remaining offcut area.
@@ -122,7 +131,7 @@ Only the cut area is measured. Mass uses an assumed 150 g/m² (a mid-weight wove
 
 Limits: 2 MiB JSON, source dimensions 12–1600 pixels, at most 48 scraps, at most 2.56 million combined bounding-box mask pixels, scene width 10–300 cm, size multiplier 0.5–1.25, seam allowance 0.4–1.5 cm. Options accept the three supported products and objectives only. Cropped frame-edge scraps and explicitly excluded material are not cut.
 
-Rate limits are per running instance: 60 requests/minute per forwarded client address, 10 POST requests/minute (saves and compute routes), 3 concept renders/minute, two in-flight geometry jobs, and two in-flight renders. These are lightweight instance limits, not a distributed admission queue. Storage operations and geometry have a 25-second deadline with an abort signal. The API does not claim a durable background queue or a global optimization guarantee.
+Rate limits are per running instance: 90 requests/minute per forwarded client address, 24 POST requests/minute (saves and compute routes; the studio's zero-waste lab sends five), 3 concept renders/minute, two in-flight geometry jobs, and two in-flight renders. These are lightweight instance limits, not a distributed admission queue. Storage operations and geometry have a 25-second deadline with an abort signal. The API does not claim a durable background queue or a global optimization guarantee.
 
 Errors return a status code, a safe message, and a correlation ID, without request content, credentials, or stack traces. Storage absence or failure returns `503` without a saved acknowledgement. Every response carries `Cache-Control: no-store` (except the OpenAPI document), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, and `Referrer-Policy: no-referrer`. The Azure entry point writes one structured log line per request with correlation ID, route (IDs redacted), status, duration, and error code. Request content and client addresses are never logged.
 
@@ -142,8 +151,12 @@ npm run demo    # analyze bundled sample photos locally and exercise every route
 npm run demo -- --base http://127.0.0.1:4173   # the same against a running server or deployment
 ```
 
-`npm run dev` serves the Azure handler with a file store that has the same create-only semantics as Blob storage. It is for development only, and the studio's status label still reads "CONNECTED TO AZURE". `npm run demo` writes `plan.json`, `chain.json`, `pool.json`, `design-map.png`, `concept.json`, `maker-packet.pdf`, and `saved-packet.pdf` to `demo-output/`. Add `--generate` to request an AI render when `RETHREAD_IMAGE_API_KEY` is set.
+`npm run dev` serves the Azure handler with a file store that has the same create-only semantics as Blob storage. It is for development only, and the studio's status label still reads "CONNECTED TO AZURE". `npm run demo` writes `plan.json`, `chain.json`, `optimize.json`, `pool.json`, `design-map.png`, `concept.json`, `maker-packet.pdf`, and `saved-packet.pdf` to `demo-output/`. Add `--generate` to request an AI render when `RETHREAD_IMAGE_API_KEY` is set.
 
 Run backend tests from the project root with `npm test`. The test-only memory and file stores never become a production fallback. Image-provider calls are tested against a mocked `fetch`.
 
 Runtime and SDK references: [Azure Functions Node.js developer reference](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node), [Azure Static Web Apps configuration](https://learn.microsoft.com/en-in/azure/static-web-apps/configuration), and [Azure Blob ContainerClient](https://learn.microsoft.com/en-us/javascript/api/preview-docs/@azure/storage-blob/containerclient?view=az-js-storage-v12).
+
+### Reproduce an applied deep-search layout
+
+An applied deep-search result includes a seed and fixed patch grid. Send them together as `options.searchSeed` (unsigned 32-bit integer) and `options.grid` (`cols` and `rows`, each 1–8) to planning, saving, and packet routes. The server reproduces and independently validates the same cuts; clients do not submit trusted cut coordinates. Changing the product, photograph, or constraints clears this selection in the studio.
