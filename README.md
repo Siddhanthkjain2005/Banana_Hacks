@@ -92,8 +92,9 @@ No pretrained neural segmentation model or production inference-accuracy claim i
 ## Submission materials
 
 - [Devpost draft](docs/DEVPOST.md): project write-up of fewer than 500 words.
-- [Demo script](docs/DEMO-SCRIPT.md): a 2:45 recording plan.
+- [Three-minute video script](docs/VIDEO-SCRIPT-3MIN.md): narration and screen actions covering every feature.
+- [Short demo script](docs/DEMO-SCRIPT.md): a 2:45 recording plan.
 - [Submission checklist](docs/SUBMISSION-CHECKLIST.md): account, team, publication, and verification fields still to complete.
 - [Organizer research](docs/research.md): sources, eligibility, deliverables, rubric, and conflicting published deadlines.
 
-**Source publication in progress:** [Siddhanthkjain2005/Banana_Hacks](https://github.com/Siddhanthkjain2005/Banana_Hacks). Use the verified [Azure demo](https://salmon-stone-073245e00.4.azurestaticapps.net) for judges. The separate Sites preview last returned HTTP 401 while signed out. No external hackathon submission has been confirmed; complete the account and team fields in the checklist before submitting.
+**Public source:** [Siddhanthkjain2005/Banana_Hacks](https://github.com/Siddhanthkjain2005/Banana_Hacks). Use the verified [Azure demo](https://salmon-stone-073245e00.4.azurestaticapps.net) for judges. The separate Sites preview last returned HTTP 401 while signed out. No external hackathon submission has been confirmed; complete the account and team fields in the checklist before submitting.

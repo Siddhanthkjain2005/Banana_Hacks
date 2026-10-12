@@ -8,7 +8,7 @@ This is a preparation checklist, not confirmation of registration, eligibility, 
 - **Team members:** Siddhanth K Jain, Adithya P, Kamma Rohan, Dinesh Kulkarni
 - **Member ages, schools, enrollment, and contributions:** [TO FILL — each member must be an enrolled student aged 14–24]
 - **Registration/account confirmation:** [TO FILL]
-- **GitHub repository:** [Siddhanthkjain2005/Banana_Hacks](https://github.com/Siddhanthkjain2005/Banana_Hacks) — source publication in progress
+- **GitHub repository:** [Siddhanthkjain2005/Banana_Hacks](https://github.com/Siddhanthkjain2005/Banana_Hacks) — source published and verified on main
 - **Hosted Site preview:** [ReThread studio](https://rethread-studio.awarerice32.chatgpt.site) — public audience has been requested; signed-out access is not yet verified and was last observed returning HTTP 401. Do not use as the judge demo until accessible.
 - **Verified Azure judge demo:** [ReThread on Azure](https://salmon-stone-073245e00.4.azurestaticapps.net) — public access, durable save, retrieval, access rejection, and deletion verified October 12, 2026
 - **Public YouTube demo URL:** [TO FILL — 2–3 minutes, never over 3 minutes]
