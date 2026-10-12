@@ -4,7 +4,7 @@ Verified on October 12, 2026. These results describe the prototype's behavior, n
 
 ## Automated checks
 
-Run `npm test` with Node.js 20 or newer. All 38 tests pass:
+Run `npm test` with Node.js 20 or newer. The original v1.1 suite contains 38 checks:
 
 - Pixel-derived calibration, disconnected scraps, noise removal, clipping, and quality flags.
 - Real mask containment, holes and concave boundaries, cut overlap, complete/partial layouts, product definitions, and calibrated SVG export.
@@ -12,6 +12,36 @@ Run `npm test` with Node.js 20 or newer. All 38 tests pass:
 - Conservative neural mask intersection, failure rollback, pinned model provenance, and SHA-256 checks of both ONNX networks.
 - Storage availability, bounded JSON/RLE validation, capability access, constant-time checks, expiry, origins, rate/concurrency limits, and timeouts.
 - Retry recovery after instance restart or lost write response, content conflicts, and atomic create across concurrent instances.
+
+## Version 1.2 backend checks
+
+Run `npm test` and `npm run demo`. All 58 tests pass. The 20 additional tests cover:
+
+- Stateless planning without storage, per-scrap analytics, and seam workload.
+- Bounded impact assumptions, and strict per-route body sections.
+- Colour arrangement as a pure permutation of identical-size cuts.
+- The exact leftover-erosion identity and maximal-rectangle search.
+- Zero-waste chains, with every cut re-checked against the original masks and for cross-project overlap; project limits; and graceful budget stops.
+- Pools that unlock a project no single donor can complete, per-donor calibration, and pool bounds.
+- Design maps drawn from measured colours, and prompts that contain the palette.
+- Image-provider requests carrying only the design map and prompt, Bearer versus Azure `api-key` auth, and safe error mapping including deadlines through stalled success and error response bodies.
+- Render rate limits.
+- PDF structure: every xref offset, page count, Letter media box, required sections, and an exact 100 mm calibration bar.
+- Owner and viewer capabilities, and pre-1.2 receipts.
+- OpenAPI path coverage, security headers, structured logs, and local create-only storage.
+
+The end-to-end demo analyzed the bundled sample photographs with the browser engine in Node.js and sent only derived masks. Observed results:
+
+| Check | Observed result |
+| --- | --- |
+| Plan, Denim repair tote | 26/26 cuts, 64.5% of usable fabric, 24 patchwork joins |
+| Colour arrangement | Same-scrap neighbours 7 → 0; mean neighbouring ΔE 21.2 → 29.5 |
+| Zero-waste chain | Tote, then a 75% pouch; utilization 64.5% → 76.6%; 44 cuts cross-validated |
+| Community pool | Three donors' three smallest scraps each: no donor can make a 125% pouch alone; the pool completes it |
+| Maker packet | 8-page PDF; MuPDF parsed it with no warnings; pages inspected visually |
+| Receipts, local handler and public Azure | Save, viewer read (`access: viewer`), viewer delete → 403, owner delete → 200 |
+
+The same end-to-end demo passed on the public Azure deployment on October 12, 2026. Health reported version 1.2.0. Stateless planning, chained projects, pooled fabric, design maps, unsaved A4 packets, saved Letter packets, private storage readiness, durable saving, and owner/viewer capabilities all succeeded. The temporary receipt was deleted by its owner capability after verification. The image-provider integration is tested against a mocked API; external image generation is not configured on this deployment, and no live render is claimed here.
 
 ## Real neural browser check
 

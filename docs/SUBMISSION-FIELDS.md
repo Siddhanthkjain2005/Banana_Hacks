@@ -6,7 +6,7 @@ Give every scrap a second story. Turn fabric photos into validated cutting plans
 
 ## Built with
 
-JavaScript, HTML5, CSS3, Node.js, Three.js, WebGL, HTML Canvas, Web Workers, SlimSAM, Segment Anything, Transformers.js, ONNX, ONNX Runtime Web, Computer Vision, Image Segmentation, K-means Clustering, CIELAB, Azure Static Web Apps, Azure Functions, Azure Blob Storage, REST APIs, SVG, GitHub Actions, OpenAI Codex, ImageGen
+JavaScript, HTML5, CSS3, Node.js, Three.js, WebGL, Web Workers, SlimSAM, Segment Anything, Transformers.js, ONNX Runtime Web, Computer Vision, Image Segmentation, CIELAB, Azure Static Web Apps, Azure Functions, Azure Blob Storage, REST APIs, OpenAPI, PDF, SVG, GitHub Actions, OpenAI Codex, Claude, ImageGen
 
 ## About the project
 
