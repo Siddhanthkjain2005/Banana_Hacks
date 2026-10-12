@@ -4,7 +4,7 @@ const { randomUUID, randomBytes, createHash, timingSafeEqual } = require('node:c
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_PIXELS = 1600 * 1600;
 const CONTAINER = 'rethread-plans';
@@ -53,12 +53,21 @@ function parseBody(req) {
 
 /** Decode untrusted local-bbox RLE and recompute all calibrated measurements. */
 function validateJobPayload(payload) {
-  exactKeys(payload, ['image', 'scraps', 'options', 'excludedScrapIds'], 'Job');
+  exactKeys(payload, ['image', 'scraps', 'options', 'excludedScrapIds', 'analysisProvenance'], 'Job');
   exactKeys(payload.image, ['width', 'height', 'sceneWidthCm'], 'Image metadata');
   const width = numberInRange(payload.image.width, 12, 1600, 'Image width', true);
   const height = numberInRange(payload.image.height, 12, 1600, 'Image height', true);
   const sceneWidthCm = numberInRange(payload.image.sceneWidthCm, 10, 300, 'Scene width');
   const pixelsPerCm = width / sceneWidthCm;
+  const analysisProvenance = payload.analysisProvenance || { engine: 'color-vision' };
+  exactKeys(analysisProvenance, ['engine', 'modelId', 'revision', 'precision', 'runtime', 'elapsedMs', 'prompt'], 'Analysis provenance');
+  if (!['color-vision', 'slimsam'].includes(analysisProvenance.engine)) bad('Unsupported image analysis engine.');
+  if (analysisProvenance.engine === 'slimsam') {
+    if (analysisProvenance.modelId !== 'Xenova/slimsam-77-uniform' || analysisProvenance.revision !== '5850ab45f587c112167512ffef949107115e26a0' || analysisProvenance.precision !== 'int8' || analysisProvenance.runtime !== 'Transformers.js 2.17.2') bad('Use the pinned SlimSAM model provenance.');
+    numberInRange(analysisProvenance.elapsedMs, 0, 90000, 'Neural elapsed time');
+    if (!Array.isArray(analysisProvenance.prompt) || analysisProvenance.prompt.length !== 2) bad('Neural provenance needs one source-image prompt point.');
+    numberInRange(analysisProvenance.prompt[0], 0, width - 1, 'Prompt x');numberInRange(analysisProvenance.prompt[1], 0, height - 1, 'Prompt y');
+  } else if (Object.keys(analysisProvenance).length !== 1) bad('Color vision provenance only contains the engine.');
   if (!Array.isArray(payload.scraps) || payload.scraps.length > 48) bad('Provide at most 48 derived scraps.');
   const rawOptions = payload.options ?? {};
   exactKeys(rawOptions, ['product', 'seamAllowanceCm', 'rotation', 'size', 'objective'], 'Options');
@@ -110,7 +119,7 @@ function validateJobPayload(payload) {
       quality: { touchesBorder: touchesFrame, issues: touchesFrame ? ['Photographed frame edge is excluded from automatic cutting.'] : [] } };
   });
   if (excluded.some(id => !seenIds.has(id))) bad('An excluded scrap ID is absent from the measured scraps.');
-  return { image: { width, height, sceneWidthCm, sceneHeightCm: height / pixelsPerCm, pixelsPerCm }, scraps, options,
+  return { image: { width, height, sceneWidthCm, sceneHeightCm: height / pixelsPerCm, pixelsPerCm }, scraps, options, analysisProvenance,
     excludedScrapIds: excluded, metrics: { inputScrapCount: scraps.length, usableScrapCount: scraps.filter(s => s.usable).length,
       excludedScrapCount: scraps.filter(s => !s.usable).length, detectedAreaPx, detectedAreaCm2: detectedAreaPx / pixelsPerCm ** 2 } };
 }
@@ -138,6 +147,7 @@ function createBlobStore(connectionString) {
     await ready;
   }
   return {
+    async ready(signal) { await ensure(signal); const properties=await container.getProperties({ abortSignal: signal }); if(properties.blobPublicAccess)throw unavailable(); return true; },
     async put(id, record, signal) {
       await ensure(signal);
       const bytes = Buffer.from(JSON.stringify(record), 'utf8');
@@ -177,6 +187,7 @@ function createHandler(configuration = {}) {
   const injected = Object.prototype.hasOwnProperty.call(configuration, 'storage');
   const configured = injected ? Boolean(configuration.storage) : Boolean(env.STORAGE_CONNECTION_STRING);
   let store = injected ? configuration.storage : null, activeJobs = 0;
+  const pendingSaves = new Set();
   const rates = new Map(), coreLoader = configuration.loadCore || loadCore;
   const timeoutMs = configuration.timeoutMs ?? 25000;
   const getStore = () => {
@@ -209,18 +220,30 @@ function createHandler(configuration = {}) {
       if (origin && origin !== allowedOrigin) throw new ApiError(400, 'ORIGIN_NOT_ALLOWED', 'This endpoint accepts same-origin browser requests only.');
       if (origin) { headers['Access-Control-Allow-Origin'] = origin; headers.Vary = 'Origin'; }
       if (method === 'OPTIONS') {
-        const extra = origin ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-ReThread-Token', 'Access-Control-Max-Age': '600' } : {};
+        const extra = origin ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-ReThread-Token, Idempotency-Key', 'Access-Control-Max-Age': '600' } : {};
         return respond(204, '', extra);
       }
       let route = typeof req.params?.path === 'string' ? req.params.path : requestURL.pathname.replace(/^\/api(?:\/|$)/, '');
       route = route.replace(/^\/+|\/+$/g, '');
+      if (route === 'ready' && method === 'GET') {
+        const storage = getStore();
+        try { if (typeof storage.ready !== 'function' || !await deadline(storage.ready(controller.signal))) throw unavailable(); } catch(error) { if(error instanceof ApiError) throw error; throw unavailable(); }
+        return respond(200, { status:'ready',service:'rethread-geometry',version:VERSION,storageReady:true,checkedAt:new Date(now()).toISOString() });
+      }
       if (route === 'health' && method === 'GET') return respond(200, { status: 'ok', service: 'rethread-geometry', version: VERSION, storageConfigured: configured,
         persistence: 'private Azure Blob storage', retentionDays: 30, limits: { maxRequestBytes: MAX_BODY_BYTES, maxSourceDimension: 1600, maxCombinedMaskPixels: MAX_PIXELS, maxScraps: 48, concurrentJobsPerInstance: 2 } });
       if (route === 'jobs' && method === 'POST') {
-        const measured = validateJobPayload(parseBody(req));
+        const payload = parseBody(req), measured = validateJobPayload(payload);
+        const canonical = value => Array.isArray(value) ? value.map(canonical) : object(value) ? Object.fromEntries(Object.keys(value).sort().map(k => [k,canonical(value[k])])) : value;
+        const inputDigest = createHash('sha256').update(JSON.stringify(canonical(payload))).digest('hex');
+        const idempotencyKey = header(req, 'idempotency-key'), suppliedToken = header(req, 'x-rethread-token');
+        if (idempotencyKey !== undefined && (!ID_RE.test(idempotencyKey) || typeof suppliedToken !== 'string' || !/^[0-9a-f]{64}$/i.test(suppliedToken))) bad('Retry-safe saves need a UUID Idempotency-Key and a 32-byte X-ReThread-Token.');
+        const saveKey = idempotencyKey?.toLowerCase();
+        if (saveKey && pendingSaves.has(saveKey)) throw new ApiError(429,'SAVE_IN_PROGRESS','This save is still being verified. Retry the same request shortly.');
         const storage = getStore();
         if (activeJobs >= 2) throw new ApiError(429, 'JOB_CAPACITY_REACHED', 'Two geometry jobs are already running on this instance. Try again shortly.');
         activeJobs++;
+        if(saveKey)pendingSaves.add(saveKey);
         try {
           const operationStarted = Date.now();
           const checkDeadline = () => {
@@ -230,6 +253,12 @@ function createHandler(configuration = {}) {
             }
           };
           const result = await deadline((async () => {
+            const replay = record => {
+              if (!authorized(suppliedToken,record.accessTokenHash) || record.inputDigest !== inputDigest) throw new ApiError(409,'IDEMPOTENCY_CONFLICT','The save key cannot be used with different settings or a different private key.');
+              if(now() >= Date.parse(record.expiresAt))throw new ApiError(404,'JOB_EXPIRED','This saved job has expired. Start a new save.');
+              return {...safeRecord(record),accessToken:suppliedToken,saved:true,replayed:true};
+            };
+            if(saveKey){let previous;try{previous=await storage.get(saveKey,controller.signal);}catch{throw unavailable();}if(previous)return replay(previous);}
             const core = await coreLoader();
             checkDeadline();
             const plan = core.optimizePattern(measured.scraps, measured.options);
@@ -237,18 +266,21 @@ function createHandler(configuration = {}) {
             checkDeadline();
             const recommendations = core.recommendProducts(measured.scraps, measured.options).map(({ product, feasible, utilization, completionRatio, reason, score, stats }) => ({ product, feasible, utilization, completionRatio, reason, score, stats }));
             checkDeadline();
-            const createdTime = now(), jobId = randomUUID(), accessToken = randomBytes(32).toString('hex'), createdAt = new Date(createdTime).toISOString(), expiresAt = new Date(createdTime + RETENTION_MS).toISOString();
+            const createdTime = now(), jobId = saveKey || randomUUID(), accessToken = saveKey ? suppliedToken : randomBytes(32).toString('hex'), createdAt = new Date(createdTime).toISOString(), expiresAt = new Date(createdTime + RETENTION_MS).toISOString();
             const record = { format: 'rethread-private-job', version: VERSION, jobId, createdAt, expiresAt, accessTokenHash: hashToken(accessToken),
-              image: measured.image, options: measured.options, excludedScrapIds: measured.excludedScrapIds, metrics: measured.metrics,
+              image: measured.image, options: measured.options, excludedScrapIds: measured.excludedScrapIds, metrics: measured.metrics, inputDigest, analysisProvenance: measured.analysisProvenance,
               scraps: measured.scraps.map(({ mask, usableMask, ...s }) => s), plan, recommendations,
               verification: { source: 'Client-derived masks; source photographs are not uploaded.', geometry: 'Server recomputed calibrated area, conservative mask containment, and cut non-overlap.',
-                limitations: ['A mask cannot independently verify its source photograph.', 'Physical condition, grain, stretch, and strength need manual inspection.', 'Nesting is a validated heuristic, not a guarantee of the best possible layout.'] } };
-            try { await storage.put(jobId, record, controller.signal); } catch { throw unavailable(); }
+                limitations: ['A mask cannot independently verify its source photograph; model provenance is client reported.', 'Physical condition, grain, stretch, and strength need manual inspection.', 'Nesting is a validated heuristic, not a guarantee of the best possible layout.'] } };
+            try { await storage.put(jobId, record, controller.signal); } catch(error) {
+              if(saveKey && [409,412].includes(error.statusCode)){let existing;try{existing=await storage.get(saveKey,controller.signal);}catch{throw unavailable();}if(existing)return replay(existing);}
+              throw unavailable();
+            }
             checkDeadline();
             return { ...safeRecord(record), accessToken, saved: true };
           })());
-          return respond(201, result);
-        } finally { activeJobs--; }
+          return respond(result.replayed ? 200 : 201, result);
+        } finally { activeJobs--; if(saveKey)pendingSaves.delete(saveKey); }
       }
       const match = /^jobs\/([^/]+)$/.exec(route);
       if (match && (method === 'GET' || method === 'DELETE')) {

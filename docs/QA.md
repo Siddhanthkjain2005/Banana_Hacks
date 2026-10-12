@@ -27,3 +27,9 @@ The six-sample verification page and earlier tote, pouch, cushion, textured-mate
 The quick palette switch was found using a modulo-three cycle despite six entries. The root agent corrected it to use the library length, and the corrected source was verified. The independent Browse samples modal includes all six.
 
 Local preview cloud endpoints are not deployed, so their 404 responses are expected. Cloud persistence needs a separate live Azure check.
+
+## Neural model and backend reliability upgrade
+
+Real browser inference with the pinned INT8 SlimSAM encoder and decoder completed in 9.8 seconds on the illustrative Earth&olive sample. The displayed foreground isolated the selected Oat scrap. Applying removed 2,311 edge pixels conservatively, changed detected scene area from 3,967 to 3,954 cm² at the assumed sample scale, and retained a validated 26-cut tote. These are workflow observations, not segmentation-accuracy or physical-measurement benchmarks.
+
+38 tests pass, including SHA-256 verification of both vendored neural networks, mask-intersection invariants, failure rollback, actual storage readiness, replay across instance restart, interrupted-write recovery, and conditional-create collision handling.

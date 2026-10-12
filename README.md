@@ -40,7 +40,7 @@ All six samples are generated illustrations, not measured photographs: three pho
 
 ## Engineering
 
-The vision pipeline fits deterministic k-means clusters to sampled image colors in CIELAB space. It estimates the background from median border colors and adapts the separation threshold to border variation. Morphological cleanup, connected regions, and traced contours form the scrap inventory; no pretrained neural model is used. A conservative boundary reduction produces the usable masks, and scraps touching the image edge are excluded from automatic cutting.
+The vision pipeline fits deterministic k-means clusters to sampled image colors in CIELAB space. It estimates the background from median border colors and adapts the separation threshold to border variation. Morphological cleanup, connected regions, and traced contours form the scrap inventory; the initial inventory uses classical vision. Optional **AI refine selected fabric** runs a real pretrained SlimSAM image encoder and prompt/mask decoder locally, presents its foreground prediction for review, and conservatively intersects it with the selected measured mask before replanning. A conservative boundary reduction produces the usable masks, and scraps touching the image edge are excluded from automatic cutting.
 
 The planner searches rectangular patch grids and optional 90-degree rotations, including seam allowance. Integral-image checks test containment within usable masks, while explicit rectangle checks prevent overlap. A separate validation pass checks the chosen layout. The geometric utilization estimate is:
 
@@ -58,6 +58,7 @@ The `api` folder contains a Node.js Azure Functions HTTP service with private Az
 
 | Endpoint | Behavior |
 | --- | --- |
+| `GET /api/ready` | Verify actual private Blob connectivity before enabling cloud saves. |
 | `GET /api/health` | Service metadata, configured-storage status, and limits. Configuration alone does not prove a durable save. |
 | `POST /api/jobs` | Validate encoded masks and settings, recompute measurements and layouts, and return a receipt after private storage confirms the write. |
 | `GET /api/jobs/{id}` | Retrieve a receipt with its `X-ReThread-Token` capability. |
@@ -73,20 +74,28 @@ Deploy both `dist` and `api`, install API dependencies from the lockfile, and co
 
 ## Verification
 
-The complete automated suite passed **28 of 28 tests**. Live anonymous checks confirmed health availability, a durable `201` save with a feasible server-validated plan and exclusions, capability-authorized retrieval without the token hash, rejection of a wrong capability (`401`), deletion followed by not found (`404`), and rejection of invalid dimensions (`400`). Browser verification also confirmed **Cloud verify & save → VERIFIED & SAVED** and **Saved plans → View receipt**, showing a complete 26-cut geometric layout and its 30-day expiry. Health configuration alone is not treated as proof of storage. See [frontend QA notes](docs/QA.md) and [API details](api/README.md).
+The complete automated suite passed **38 of 38 tests**. Live anonymous checks confirmed health availability, a durable `201` save with a feasible server-validated plan and exclusions, capability-authorized retrieval without the token hash, rejection of a wrong capability (`401`), deletion followed by not found (`404`), and rejection of invalid dimensions (`400`). Browser verification also confirmed **Cloud verify & save → VERIFIED & SAVED** and **Saved plans → View receipt**, showing a complete 26-cut geometric layout and its 30-day expiry. Health configuration alone is not treated as proof of storage. See [frontend QA notes](docs/QA.md) and [API details](api/README.md).
 
 ## Limits
 
 This is a hackathon prototype. Similar foreground/background colors, shadows, touching scraps, perspective, patterned fabric, and uneven lighting can affect the mask. Scene width is set by the user, so all physical dimensions are estimates. The preview is not a cloth simulation, and the exported plan is not a validated sewing pattern. Fabric grain, stretch, thickness, and real assembly requirements need a maker's review before cutting.
 
-No pretrained neural segmentation model or production inference-accuracy claim is included. The strongest next steps are real maker trials, perspective calibration, grain-direction constraints, and documented comparisons of segmentation and packing methods.
+SlimSAM is a general pretrained segmentation model, not a textile classifier or evidence of sewing safety. No production inference-accuracy claim is included. The strongest next steps are real maker trials, perspective calibration, grain-direction constraints, and documented comparisons of segmentation and packing methods.
+
+## Neural model and recovery
+
+Select a scrap in the photo or material library, then choose **AI refine selected fabric**. Review the actual green SlimSAM prediction and apply it to recalculate the plan. All runtime and INT8 encoder/decoder weights are hosted with the app; no inference API or photo upload is required. The exact model revision, file sizes and SHA-256 digests are recorded in [model provenance](dist/models/slimsam/provenance.json). First inference also loads the model runtime; subsequent prompts reuse the same photograph embeddings.
+
+Azure `/api/ready` checks actual private-container connectivity. Cloud saves use a browser-retained UUID and random private capability. Repeating the same save retrieves the original durable receipt, including after a lost response or an instance restart. Conditional Blob creation prevents concurrent duplicate writes. Different settings or capabilities cannot reuse a save key. Receipts include a SHA-256 fingerprint of the derived request and explicitly identify neural provenance as client reported.
 
 ## Credits and provenance
 
 - **Three.js 0.180.0:** rendering library by the Three.js authors, distributed under the [MIT License](https://github.com/mrdoob/three.js/blob/r180/LICENSE). Preserve the included license notice when redistributing the library.
 - **OpenAI Codex:** AI coding assistance was used for research, implementation, design iteration, and documentation. Final functionality and claims require human review.
 - **ImageGen:** Denim repair, Autumn linen, and School-day cotton were generated on October 12, 2026. Prompts and provenance are in [sample-provenance.json](dist/assets/sample-provenance.json). These are synthetic examples, not measured fabric photographs.
-- **Procedural imagery:** Earth & olive, Coastal remnants, and Quiet neutrals are generated canvas illustrations authored with AI coding assistance. No external textile dataset or pretrained neural segmentation model is used.
+- **Procedural imagery:** Earth & olive, Coastal remnants, and Quiet neutrals are generated canvas illustrations authored with AI coding assistance. No external textile dataset was used to create these samples.
+- **SlimSAM:** [Xenova/slimsam-77-uniform](https://huggingface.co/Xenova/slimsam-77-uniform), revision `5850ab45f587c112167512ffef949107115e26a0`, ONNX INT8 encoder and decoder, Apache-2.0.
+- **Transformers.js 2.17.2:** Apache-2.0; **ONNX Runtime Web 1.14.0:** MIT. Their license notices are included in `dist/vendor/ai`.
 - **Azure SDK for JavaScript:** `@azure/storage-blob` supplies persistence and is [MIT licensed](https://github.com/Azure/azure-sdk-for-js/blob/main/sdk/storage/storage-blob/package.json).
 
 ## Submission materials

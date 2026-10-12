@@ -10,11 +10,11 @@ Explore six sample collections, adjust size, seams, rotation, and design priorit
 
 ## How we built it
 
-We built the interface with HTML, CSS, and JavaScript, using Three.js for interactive previews and a Web Worker for image processing. Deterministic k-means clustering in CIELAB color space, border-based background estimation, morphology, and connected components produce scrap masks. No pretrained neural model is used.
+We built the interface with HTML, CSS, and JavaScript, using Three.js for interactive previews and a Web Worker for image processing. A pretrained SlimSAM encoder and mask decoder refine selected fabric boundaries locally. CIELAB color clustering, morphology, and connected components build the inventory.
 
 Our planner searches patch grids and rotations, includes seam allowances, and checks cuts against conservative masks. Separate validation checks containment and overlap. Utilization measures planned cut area divided by usable detected fabric area.
 
-Azure Functions validates encoded masks and settings, recomputes geometry, and saves receipts in private Blob storage. Individual access capabilities protect retrieval and deletion. Photos remain in the browser; cloud requests contain derived geometry and settings.
+Azure Functions validates encoded masks and settings, recomputes geometry, and saves receipts in private Blob storage. Access capabilities protect retrieval and deletion; retry-safe writes recover interrupted saves. Photos remain in the browser; cloud requests contain derived geometry and settings.
 
 ## Challenges we ran into
 
@@ -24,7 +24,7 @@ We kept incomplete layouts visibly incomplete and made cloud saving acknowledge 
 
 ## Accomplishments that we're proud of
 
-We connected image analysis to usable design decisions and physical-scale exports. **All 28 automated tests pass.** The public Azure deployment passed real save, retrieval, wrong-key rejection, deletion, and invalid-input checks. Private records expire after 30 days, with storage cleanup configured.
+We connected image analysis to usable design decisions and physical-scale exports. **All 38 automated tests pass.** The public Azure deployment passed real save, retrieval, wrong-key rejection, deletion, and invalid-input checks. Private records expire after 30 days, with storage cleanup configured.
 
 ## What we learned
 
@@ -34,4 +34,4 @@ Visual polish earns attention; traceable geometry earns trust. Clear calibration
 
 We want maker trials, perspective correction, grain-direction constraints, and documented segmentation comparisons. Our team is **Siddhanth K Jain, Adithya P, Kamma Rohan, and Dinesh Kulkarni**.
 
-**Credits:** OpenAI Codex assisted development; Three.js and Azure SDK provide rendering and storage. Three samples use ImageGen; three are procedural illustrations. Provenance is included.
+**Credits:** OpenAI Codex assisted development; Three.js and Azure SDK provide rendering and storage. SlimSAM and Transformers.js are credited with licenses. Three samples use ImageGen; three are procedural illustrations. Provenance is included.

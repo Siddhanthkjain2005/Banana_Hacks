@@ -2,7 +2,7 @@
 
 Public Azure demo: [Open ReThread](https://salmon-stone-073245e00.4.azurestaticapps.net/)
 
-Read only the quoted narration. The nine segments total **3:00**, including the opening and closing credits, with **385 narrated words** (about 128 words per minute). Rehearse with a timer and use the spare seconds in each segment for clicks or a quiet pause. These are timing targets, not a guarantee that every speaking pace produces exactly three minutes.
+Read only the quoted narration. The nine segments total **3:00**, including the opening and closing credits, with **384 narrated words** (about 128 words per minute). Rehearse with a timer and use the spare seconds in each segment for clicks or a quiet pause. These are timing targets, not a guarantee that every speaking pace produces exactly three minutes.
 
 ## 0:00–0:20
 
@@ -12,9 +12,9 @@ Read only the quoted narration. The nine segments total **3:00**, including the 
 
 ## 0:20–0:40
 
-**On screen:** Point to **Photo width**, enter a measured value for a real photo, and click **Analyze & design**. Show the real result, then toggle **Detected edges** off and on. Use an illustrative sample width only when the sample label stays visible.
+**On screen:** Point to **Photo width**, enter a measured value for a real photo, and click **Analyze & design**. Select a scrap, click **AI refine selected fabric**, review the actual green prediction, and apply the boundary. Use an illustrative sample width only when the sample label stays visible.
 
-> Lay scraps flat with gaps, then enter the measured width of the whole scene. Analyze and design learns color clusters in perceptual CIELAB space, estimates the background, and traces connected shapes. Toggle detected edges to compare the outlines with your original image.
+> Set the scene width, analyze, and select a fabric piece. AI refine runs SlimSAM’s pretrained encoder and mask decoder locally. Review the green prediction, then apply its conservative intersection with the material mask. Every cut is recalculated from the resulting pixels.
 
 ## 0:40–1:00
 
@@ -54,9 +54,9 @@ Read only the quoted narration. The nine segments total **3:00**, including the 
 
 ## 2:40–3:00
 
-**On screen:** Finish on the completed 3D design with the team name and all four members as a small overlay. Briefly show the verified 28-test result and GitHub link. Put credits on this same shot; end the video exactly at 3:00.
+**On screen:** Finish on the completed 3D design with the team name and all four members as a small overlay. Briefly show the verified 38-test result and GitHub link. Put credits on this same shot; end the video exactly at 3:00.
 
-> We are Oddment Guild: Siddhanth K Jain, Adithya P, Kamma Rohan, and Dinesh Kulkarni. Twenty-eight tests pass, and live cloud saving, retrieval, access rejection, and deletion were verified. ReThread connects image-driven decisions to practical reuse, with Three.js, Azure, ImageGen samples, and Codex coding assistance.
+> We are Oddment Guild: Siddhanth K Jain, Adithya P, Kamma Rohan, and Dinesh Kulkarni. Thirty-eight tests pass, and live cloud saving, retrieval, access rejection, and deletion were verified. ReThread connects image-driven decisions to practical reuse, with Three.js, Azure, ImageGen samples, and Codex coding assistance.
 
 ## Before recording
 

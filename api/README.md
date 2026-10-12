@@ -8,6 +8,7 @@ The `rethread-plans` container is created privately. If an existing container pe
 
 ## Routes
 
+- `GET /api/ready`: actually probes the private Blob container and returns `storageReady: true` only after connectivity and private access checks pass.
 - `GET /api/health`: service version, configuration availability, and input limits. Configuration availability is not a storage connectivity test.
 - `POST /api/jobs`: server validates derived masks, reruns nesting and product comparisons, commits the report, then returns `201` with `saved: true`, a random job UUID and a one-time 32-byte hex capability token. Partial plans retain `feasible: false`; saving does not turn them into complete designs.
 - `GET /api/jobs/{uuid}`: retrieve the saved report using the `X-ReThread-Token` header. No token or token hash is returned.
@@ -55,3 +56,9 @@ The server verifies geometry on client-derived masks. It cannot independently ve
 Run backend tests from the project root: `node --test tests/backend.test.mjs`. The test-only injected memory store never becomes a production fallback.
 
 Runtime and SDK references: [Azure Functions Node.js developer reference](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node), [Azure Static Web Apps configuration](https://learn.microsoft.com/en-in/azure/static-web-apps/configuration), and [Azure Blob ContainerClient](https://learn.microsoft.com/en-us/javascript/api/preview-docs/@azure/storage-blob/containerclient?view=az-js-storage-v12).
+
+## Retry-safe saves
+
+For replay protection, send a UUIDv4 `Idempotency-Key` and a browser-generated 32-byte hex `X-ReThread-Token` on POST. Retain both privately before making the request. The first durable write returns201; replaying the same JSON content and capability returns200 with `replayed: true`, the same job ID and original expiry. Reordered object properties are equivalent. Different input or capabilities return409. Conditional Blob creation protects cross-instance races; no distributed in-memory lock is claimed. Lost write responses can be recovered by retrying with the same key.
+
+Receipts include a SHA-256 `inputDigest`. Optional `analysisProvenance` accepts only the pinned SlimSAM model or color-vision engine; it is client-reported metadata, not independent server proof of inference. Photographs remain local.

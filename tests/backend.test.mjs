@@ -13,6 +13,7 @@ function payload() {
 }
 class MemoryStore {
   records = new Map();
+  async ready() { return true; }
   async put(id, value) { this.records.set(id, structuredClone(value)); }
   async get(id) { return structuredClone(this.records.get(id) || null); }
   async delete(id) { return this.records.delete(id); }
@@ -27,6 +28,49 @@ test('production core files are byte-identical to the actual browser engine', as
     const [a, b] = await Promise.all([readFile(new URL(`../dist/${source}`, import.meta.url)), readFile(new URL(`../api/core/${copy}`, import.meta.url))]);
     assert.equal(Buffer.compare(a, b), 0);
   }
+});
+
+test('readiness actually checks private storage instead of treating configuration as connectivity',async()=>{
+  const absent=await createHandler({env:{}})(request('GET','ready'));assert.equal(absent.status,503);
+  let probes=0;const handler=createHandler({storage:{async ready(){probes++;return true;}}});const good=await handler(request('GET','ready'));assert.equal(good.status,200);assert.equal(json(good).storageReady,true);assert.equal(probes,1);
+  const broken=await createHandler({storage:{async ready(){throw Error('secret storage key');}}})(request('GET','ready'));assert.equal(broken.status,503);assert.ok(!broken.body.includes('secret'));
+});
+
+test('a retry recovers the same durable save without rerunning geometry or duplicating records',async()=>{
+  const storage=new MemoryStore(),key='d4a7ab96-051b-4aaf-9202-0351bd53ef2a',token='a'.repeat(64);const handler=createHandler({storage});
+  const post=p=>request('POST','jobs',p,undefined,{headers:{'Content-Type':'application/json','Idempotency-Key':key,'X-ReThread-Token':token}});
+  const first=await handler(post(payload()));assert.equal(first.status,201);const initial=json(first);assert.equal(initial.jobId,key);assert.equal(initial.accessToken,token);assert.match(initial.inputDigest,/^[0-9a-f]{64}$/);
+  const retried=await handler(post(payload()));assert.equal(retried.status,200);assert.equal(json(retried).replayed,true);assert.equal(json(retried).jobId,key);assert.equal(json(retried).createdAt,initial.createdAt);assert.equal(storage.records.size,1);
+  const changed=payload();changed.options.size=.5;assert.equal((await handler(post(changed))).status,409);
+  const wrong=post(payload());wrong.headers['X-ReThread-Token']='b'.repeat(64);assert.equal((await handler(wrong)).status,409);
+});
+
+test('retry recovery survives a new service instance and object property reordering',async()=>{
+  const storage=new MemoryStore(),key='a0da9d60-de9b-445f-b0dc-70da2679640f',token='c'.repeat(64),p=payload();const headers={'Content-Type':'application/json','Idempotency-Key':key,'X-ReThread-Token':token};
+  assert.equal((await createHandler({storage})(request('POST','jobs',p,undefined,{headers}))).status,201);
+  const reordered={options:p.options,scraps:p.scraps,image:p.image};
+  const response=await createHandler({storage,loadCore:()=>{throw Error('Replay must not execute inference');}})(request('POST','jobs',reordered,undefined,{headers}));assert.equal(response.status,200);assert.equal(json(response).replayed,true);assert.equal(storage.records.size,1);
+});
+
+test('retry keys and neural provenance are strictly bounded before storage',async()=>{
+  const handler=createHandler({storage:new MemoryStore()});
+  assert.equal((await handler(request('POST','jobs',payload(),undefined,{headers:{'Idempotency-Key':'invalid'}}))).status,400);
+  const p=payload();p.analysisProvenance={engine:'slimsam',modelId:'made-up'};assert.equal((await handler(request('POST','jobs',p))).status,400);
+  p.analysisProvenance={engine:'slimsam',modelId:'Xenova/slimsam-77-uniform',revision:'5850ab45f587c112167512ffef949107115e26a0',precision:'int8',runtime:'Transformers.js 2.17.2',elapsedMs:1200,prompt:[50,50]};const saved=await handler(request('POST','jobs',p));assert.equal(saved.status,201);assert.equal(json(saved).analysisProvenance.engine,'slimsam');assert.ok(json(saved).verification.limitations[0].includes('client reported'));
+});
+
+test('a lost storage response can be recovered with the retained private save key',async()=>{
+  const storage=new MemoryStore();let writes=0;const put=storage.put.bind(storage);storage.put=async(id,value)=>{await put(id,value);writes++;throw Error('Response connection was interrupted after commit');};
+  const headers={'Content-Type':'application/json','Idempotency-Key':'a36fce6a-b688-4dd4-bd84-1d710fbcbd75','X-ReThread-Token':'d'.repeat(64)},req=request('POST','jobs',payload(),undefined,{headers});
+  const first=await createHandler({storage})(req);assert.equal(first.status,503);assert.equal(json(first).saved,undefined);
+  const retried=await createHandler({storage})(req);assert.equal(retried.status,200);assert.equal(json(retried).saved,true);assert.equal(json(retried).replayed,true);assert.equal(writes,1);
+});
+
+test('atomic create prevents duplicate records across simultaneous service instances',async()=>{
+  const storage=new MemoryStore();let count=0,release;const gate=new Promise(resolve=>release=resolve);
+  storage.put=async(id,value)=>{if(++count===2)release();await gate;if(storage.records.has(id)){const error=Error('Already exists');error.statusCode=409;throw error;}storage.records.set(id,structuredClone(value));};
+  const headers={'Content-Type':'application/json','Idempotency-Key':'a94fd270-cd3b-4023-bc88-6c5a1d1e2a09','X-ReThread-Token':'e'.repeat(64)},req=request('POST','jobs',payload(),undefined,{headers});
+  const responses=await Promise.all([createHandler({storage})(req),createHandler({storage})(req)]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,201]);assert.equal(storage.records.size,1);assert.equal(json(responses[0]).jobId,json(responses[1]).jobId);
 });
 
 test('server recomputes calibration, decoded area, exclusions and conservative valid cutting geometry', async () => {

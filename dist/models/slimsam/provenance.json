@@ -1,0 +1,30 @@
+{
+  "model": "Xenova/slimsam-77-uniform",
+  "revision": "5850ab45f587c112167512ffef949107115e26a0",
+  "license": "Apache-2.0",
+  "source": "https://huggingface.co/Xenova/slimsam-77-uniform",
+  "format": "ONNX INT8",
+  "runtime": "Transformers.js 2.17.2; ONNX Runtime Web 1.14.0",
+  "files": [
+    {
+      "file": "config.json",
+      "bytes": 379,
+      "sha256": "6339884f168658d3ca6473b486973913fb33e84e625e06ae2dd7b4a808187419"
+    },
+    {
+      "file": "preprocessor_config.json",
+      "bytes": 466,
+      "sha256": "225545a743c654e3c495ec6f545a0eaba57c8ba3fbbd8483b3cb1c0fc58db517"
+    },
+    {
+      "file": "onnx/vision_encoder_quantized.onnx",
+      "bytes": 8882165,
+      "sha256": "cce23c7b2e5d4f330932738fb67ba518e04b0d99ccdd1cccd22a7da4e01f2971"
+    },
+    {
+      "file": "onnx/prompt_encoder_mask_decoder_quantized.onnx",
+      "bytes": 4903810,
+      "sha256": "cb90b279f549d2cab7fd6e20c38522438c65d84bdcca3d2a764cff7d857fdce2"
+    }
+  ]
+}

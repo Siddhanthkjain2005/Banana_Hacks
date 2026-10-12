@@ -22,7 +22,7 @@ This is a preparation checklist, not confirmation of registration, eligibility, 
 - [ ] Exclude and restore material through **Review materials**, verifying recalculation.
 - [ ] Verify **Find my best fit** checks all three products and ranks complete plans first.
 - [x] Verify live durable POST save, GET retrieval, wrong access-key rejection, DELETE followed by 404, and invalid-dimension rejection. Health configuration alone was not used as proof of storage.
-- [x] Pass all 28 automated tests and configure 30-day private Blob lifecycle cleanup.
+- [x] Pass all 38 automated tests and configure 30-day private Blob lifecycle cleanup.
 - [x] Verify browser **Cloud verify & save → VERIFIED & SAVED** and **Saved plans → View receipt** with an actual complete 26-cut layout and 30-day expiry.
 - [ ] Keep access capabilities, Azure credentials, and storage keys out of the recording and repository.
 - [ ] Confirm mask-derived placements stay within scrap boundaries and do not overlap.
@@ -47,7 +47,7 @@ This is a preparation checklist, not confirmation of registration, eligibility, 
 
 ## Claims to keep accurate
 
-- This build uses unsupervised per-image color clustering and classical image processing, not a pretrained neural segmentation model.
+- The initial inventory uses color clustering and classical processing. Optional SlimSAM refinement runs a pretrained neural encoder and decoder locally; it is not a textile classifier.
 - Photographs are analyzed locally; hosting a demo does not require sending the photos to an image inference service.
 - Utilization means planned patch area divided by detected usable material area, after the conservative boundary reduction. It is not a measured emissions, water, money, or waste-saving outcome.
 - Dimensions depend on the user-entered scene width and the quality of the photograph. Check material measurements before cutting.

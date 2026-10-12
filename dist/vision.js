@@ -285,6 +285,32 @@ export function analyzeImage(imageData, options = {}) {
   };
 }
 
+/** Apply a real neural foreground prediction conservatively to one selected scrap. */
+export function refineScrapMask(analysis, scrapId, foregroundMask, modelProvenance) {
+  if (!analysis?.scraps || !ArrayBuffer.isView(foregroundMask) || foregroundMask.length !== analysis.width * analysis.height) throw new Error('Neural mask must match the source image dimensions.');
+  const original = analysis.scraps.find(s => s.id === scrapId);
+  if (!original) throw new Error('Select an existing measured fabric piece.');
+  if (modelProvenance?.modelId !== 'Xenova/slimsam-77-uniform' || modelProvenance.revision !== '5850ab45f587c112167512ffef949107115e26a0') throw new Error('Provide the pinned SlimSAM model provenance.');
+  const mask = new Uint8Array(original.mask.length), bbox = original.bbox;
+  for (let p = 0; p < mask.length; p++) {
+    const source = (bbox.y + Math.floor(p / bbox.width)) * analysis.width + bbox.x + p % bbox.width;
+    mask[p] = original.mask[p] && foregroundMask[source] ? 1 : 0;
+  }
+  const areaPx = mask.reduce((sum,v) => sum + v,0);
+  if (areaPx < Math.max(9,original.areaPx * .25)) throw new Error('The neural prediction disagrees with most of this fabric. Keep the current boundary or select another piece.');
+  const usableMask = morphology(mask,bbox.width,bbox.height,false), usableAreaPx = usableMask.reduce((sum,v) => sum + v,0), ppcm = analysis.pixelsPerCm;
+  if (!usableAreaPx) throw new Error('The refined region is too thin for automatic cutting.');
+  const scrap = {...original,mask,usableMask,areaPx,areaCm2:round(areaPx/ppcm**2),usableAreaPx,usableAreaCm2:round(usableAreaPx/ppcm**2),contour:traceContour(mask,bbox),coverage:round(areaPx/(bbox.width*bbox.height),3),
+    quality:{...original.quality,issues:[...original.quality.issues.filter(s => !s.startsWith('SlimSAM')),'SlimSAM predicted this boundary; review the actual fabric before cutting.']}};
+  const scraps = analysis.scraps.map(s => s.id === scrapId ? scrap : s), cleanMask = new Uint8Array(analysis.mask);
+  for (let p = 0; p < mask.length; p++) {
+    const source = (bbox.y + Math.floor(p/bbox.width))*analysis.width+bbox.x+p%bbox.width;
+    if (original.mask[p]) cleanMask[source] = mask[p];
+  }
+  const total = scraps.reduce((sum,s) => sum+s.areaPx,0);
+  return {...analysis,scraps,mask:cleanMask,modelProvenance,neuralRefinement:{scrapId,removedPixels:original.areaPx-areaPx},metrics:{...analysis.metrics,totalAreaCm2:round(total/ppcm**2),usableAreaCm2:round(scraps.filter(s=>s.usable).reduce((sum,s)=>sum+s.usableAreaPx,0)/ppcm**2),foregroundCoverage:round(total/(analysis.width*analysis.height),4)}};
+}
+
 function invalidIntegral(mask, w, h) {
   const stride = w + 1, integral = new Uint32Array(stride * (h + 1));
   for (let y = 0; y < h; y++) {
@@ -533,6 +559,7 @@ export function exportPlanJSON(plan, analysis) {
   const cleanScraps = (analysis?.scraps || []).map(({ mask, usableMask, ...scrap }) => scrap);
   return JSON.stringify({ format: 'rethread-cutting-report', version: 1, createdAt: new Date().toISOString(),
     measurement: analysis ? { widthPx: analysis.width, heightPx: analysis.height, sceneWidthCm: analysis.sceneWidthCm, sceneHeightCm: analysis.sceneHeightCm, pixelsPerCm: analysis.pixelsPerCm, background: analysis.background, metrics: analysis.metrics, warnings: analysis.warnings, scraps: cleanScraps } : null,
+    analysisProvenance: analysis?.modelProvenance || { engine: 'color-vision' }, neuralRefinement: analysis?.neuralRefinement || null,
     plan, limitations: ['Flat top-down photograph and accurate scene width required.', 'Outlines and physical dimensions are image-derived estimates; inspect every cut boundary.', 'Fabric type, durability, stretch, grain, and hidden holes are not verified.', 'The nesting heuristic finds validated layouts, not provably optimal layouts.'],
   }, null, 2);
 }
