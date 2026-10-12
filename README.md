@@ -6,7 +6,7 @@ Turn a photograph of fabric offcuts into a material inventory, a validated cutti
 
 [![Tests](https://github.com/Siddhanthkjain2005/Banana_Hacks/actions/workflows/ci.yml/badge.svg)](https://github.com/Siddhanthkjain2005/Banana_Hacks/actions/workflows/ci.yml)
 
-**[Open the live Azure demo](https://salmon-stone-073245e00.4.azurestaticapps.net/)** · [Project story](docs/DEVPOST.md) · [Three-minute video script](docs/VIDEO-SCRIPT-3MIN.md)
+**[Open the live Azure demo](https://salmon-stone-073245e00.4.azurestaticapps.net/)** · [Submission fields](docs/SUBMISSION-FIELDS.md) · [Project story](docs/DEVPOST.md) · [Three-minute video script](docs/VIDEO-SCRIPT-3MIN.md)
 
 ![ReThread studio with a neural-refined fabric inventory, 3D tote, validated cuts, and private Azure saving](docs/screenshots/studio.jpg)
 
