@@ -11,3 +11,5 @@ local.settings.json
 .azure/
 .swa/
 coverage/
+demo-output/
+.rethread-data/

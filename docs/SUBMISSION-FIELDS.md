@@ -2,11 +2,11 @@
 
 ## Elevator pitch
 
-Give every scrap a second story. Turn fabric photos into validated cutting plans and interactive 3D designs with local neural vision and private cloud saving.
+Give every scrap a second story. Turn fabric photos into validated cutting plans, zero-waste project chains, and layout-conditioned AI concept renders, with local neural vision and private cloud saving.
 
 ## Built with
 
-JavaScript, HTML5, CSS3, Node.js, Three.js, WebGL, HTML Canvas, Web Workers, SlimSAM, Segment Anything, Transformers.js, ONNX, ONNX Runtime Web, Computer Vision, Image Segmentation, K-means Clustering, CIELAB, Azure Static Web Apps, Azure Functions, Azure Blob Storage, REST APIs, SVG, GitHub Actions, OpenAI Codex, ImageGen
+JavaScript, HTML5, CSS3, Node.js, Three.js, WebGL, HTML Canvas, Web Workers, SlimSAM, Segment Anything, Transformers.js, ONNX, ONNX Runtime Web, Computer Vision, Image Segmentation, K-means Clustering, CIELAB, Generative AI, Image Generation, OpenAI Images API, Azure OpenAI, Azure Static Web Apps, Azure Functions, Azure Blob Storage, REST APIs, OpenAPI, PDF, SVG, PNG, GitHub Actions, OpenAI Codex, ImageGen
 
 ## About the project
 

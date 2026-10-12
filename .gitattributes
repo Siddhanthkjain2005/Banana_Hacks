@@ -1,0 +1,4 @@
+# Pinned model files are verified byte-for-byte against SHA-256 digests.
+dist/models/** -text
+*.onnx binary
+*.wasm binary

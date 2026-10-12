@@ -13,6 +13,36 @@ Run `npm test` with Node.js 20 or newer. All 38 tests pass:
 - Storage availability, bounded JSON/RLE validation, capability access, constant-time checks, expiry, origins, rate/concurrency limits, and timeouts.
 - Retry recovery after instance restart or lost write response, content conflicts, and atomic create across concurrent instances.
 
+## Version 1.2 backend checks
+
+Run `npm test` and `npm run demo`. All 57 tests pass. The 19 new tests cover:
+
+- Stateless planning without storage, per-scrap analytics, and seam workload.
+- Bounded impact assumptions, and strict per-route body sections.
+- Colour arrangement as a pure permutation of identical-size cuts.
+- The exact leftover-erosion identity and maximal-rectangle search.
+- Zero-waste chains, with every cut re-checked against the original masks and for cross-project overlap; project limits; and graceful budget stops.
+- Pools that unlock a project no single donor can complete, per-donor calibration, and pool bounds.
+- Design maps drawn from measured colours, and prompts that contain the palette.
+- Image-provider requests carrying only the design map and prompt, Bearer versus Azure `api-key` auth, and safe error mapping including timeouts.
+- Render rate limits.
+- PDF structure: every xref offset, page count, Letter media box, required sections, and an exact 100 mm calibration bar.
+- Owner and viewer capabilities, and pre-1.2 receipts.
+- OpenAPI path coverage, security headers, structured logs, and local create-only storage.
+
+The end-to-end demo analyzed the bundled sample photographs with the browser engine in Node.js and sent only derived masks. Observed results:
+
+| Check | Observed result |
+| --- | --- |
+| Plan, Denim repair tote | 26/26 cuts, 64.5% of usable fabric, 24 patchwork joins |
+| Colour arrangement | Same-scrap neighbours 7 → 0; mean neighbouring ΔE 21.2 → 29.5 |
+| Zero-waste chain | Tote, then a 75% pouch; utilization 64.5% → 76.6%; 44 cuts cross-validated |
+| Community pool | Three donors' three smallest scraps each: no donor can make a 125% pouch alone; the pool completes it |
+| Maker packet | 8-page PDF; MuPDF parsed it with no warnings; pages inspected visually |
+| Receipts over `npm run dev` | Save, viewer read (`access: viewer`), viewer delete → 403, owner delete → 200 |
+
+These checks ran locally against the same handler that Azure runs. The 1.2 routes have not yet been re-verified on the public Azure deployment. The image-provider integration is tested against a mocked API; no live render is claimed here.
+
 ## Real neural browser check
 
 SlimSAM ran on the illustrative Earth&olive scene, isolated the selected Oat piece, and displayed its predicted foreground for review. Applying the result conservatively removed 2,311 pixels, changed estimated scene area from 3,967 to 3,954 cm² at the illustrative scale, and recalculated a complete 26-cut tote. Local inference including initialization took 9.8 seconds; the first Azure browser run including asset downloads took 24.1 seconds. These observations are not performance guarantees.

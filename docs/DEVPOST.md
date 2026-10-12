@@ -8,6 +8,13 @@ Upload a flat photograph, enter its scene width, and generate a material invento
 
 Explore six labeled synthetic collections, resize designs, adjust seams and rotation, exclude scraps, and inspect exploded assembly or wireframes. Export SVG, JSON, TXT, and PNG files. Save collections locally or archive verified plans privately on Azure.
 
+The ReThread API goes further:
+- **Layout-conditioned concept renders.** The validated cutting plan becomes a design map of measured colours and real seams, and an image model renders the product from it.
+- **Zero-waste project chains.** Plan more products from the exact leftovers. On our Denim sample, a tote plus a pouch use 76.6% of the fabric instead of 64.5%.
+- **Community fabric pools.** A repair café can combine several donors' photos into one project that none of them could make alone.
+- **Colour-aware sewing layouts and printable maker packets.** A PDF with a calibration bar, cut list, cutting diagrams, and steps.
+- **Read-only share links.**
+
 ## How we built it
 
 HTML, CSS, JavaScript, Web Workers, and Three.js provide the studio. CIELAB k-means fits image colors using the objective
@@ -44,13 +51,27 @@ $$
 
 Azure Functions validates encoded masks, recomputes geometry, and commits private Blob receipts. Random capabilities, stored token hashes, input fingerprints, conditional writes, and idempotency keys support protected access and interrupted-save recovery. Photographs remain local.
 
+For zero-waste chains, the leftover after cutting rectangle R must be as conservative as the engine's own 3 × 3 erosion. We use the identity
+
+$$
+\operatorname{erode}(M-R)=\operatorname{erode}(M)-\operatorname{dilate}(R),
+$$
+
+so each chained plan sees exactly the usable offcut. Every chained cut is then re-validated against the original masks. Cuts with identical dimensions are interchangeable, so the sewing layout permutes them to minimize
+
+$$
+C(\pi)=\sum_{(s,t)\in N}p\big(\pi(s),\pi(t)\big),\qquad p=\begin{cases}2&\text{same scrap}\\\max\!\left(0,\,1-\tfrac{\Delta E_{76}}{40}\right)&\text{otherwise}\end{cases}
+$$
+
+over edge-sharing slots N, without moving any cut on the fabric. The design map of that layout is the reference image for an Images API edit request, so the concept render follows validated geometry. The packet is drawn by a dependency-free vector PDF writer with an exact 100 mm calibration bar.
+
 ## Challenges we ran into
 
-Bounding boxes contain empty space around irregular scraps. Pixel containment checks prevented cuts from crossing those gaps. Shadows, similar colors, and calibration errors required conservative boundaries and quality flags. Neural inference needed correct tensor shapes, efficient model loading, and human review. Cloud retries needed durable recovery without duplicate records.
+Bounding boxes contain empty space around irregular scraps. Pixel containment checks prevented cuts from crossing those gaps. Shadows, similar colors, and calibration errors required conservative boundaries and quality flags. Neural inference needed correct tensor shapes, efficient model loading, and human review. Cloud retries needed durable recovery without duplicate records. Our first zero-waste chain timed out at 25 seconds: proving that nothing else fits fragmented offcuts is the expensive case. Profiling showed that fine 4 × 4 grids dominated. Exact fit pre-checks, a 3 × 3 cap for bonus projects, and a pruning bound brought the search to 5–10 seconds on most samples. A time budget returns validated partial chains.
 
 ## Accomplishments that we're proud of
 
-**All 38 automated tests pass in GitHub Actions.** Real neural inference changed measured geometry and recalculated a complete 26-cut tote. Public Azure checks verified durable saves, replay recovery, private retrieval, wrong-key rejection, and deletion. Records expire after 30 days.
+**All 57 automated tests pass, and CI runs an end-to-end API demo on the bundled samples.** Real neural inference changed measured geometry and recalculated a complete 26-cut tote. Public Azure checks verified durable saves, replay recovery, private retrieval, wrong-key rejection, and deletion. Records expire after 30 days.
 
 ## What we learned
 
@@ -58,7 +79,7 @@ Useful AI needs traceable consequences: predicted pixels must affect actual cutt
 
 ## What's next for Oddment Guild
 
-We want maker trials, perspective correction, grain constraints, and documented textile benchmarks.
+We want maker trials, perspective correction, grain constraints, and documented textile benchmarks. We also want to bring chains, pools, concept renders, and packets into the studio interface, and run repair-café pilots with pooled donations.
 
 **Team:** Siddhanth K Jain, Adithya P, Kamma Rohan, Dinesh Kulkarni.
 
