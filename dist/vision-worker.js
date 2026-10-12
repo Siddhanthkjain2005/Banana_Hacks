@@ -1,0 +1,4 @@
+import { analyzeImage, optimizePattern } from './vision.js';
+import { recommendProducts } from './recommend.js';
+let analysis;
+self.onmessage=({data})=>{try{if(data.type==='analyze')analysis=analyzeImage(data.imageData,{sceneWidthCm:data.sceneWidthCm});if(!analysis)throw Error('Analyze a fabric photo first.');const scraps=analysis.scraps.filter(s=>!(data.excludedIds||[]).includes(s.id));if(data.type==='recommend'){self.postMessage({requestId:data.requestId,recommendations:recommendProducts(scraps,data.options||{})});return;}const plan=optimizePattern(scraps,data.options||{});plan.excludedScrapIds=data.excludedIds||[];self.postMessage({requestId:data.requestId,analysis:data.type==='analyze'?analysis:null,plan});}catch(error){self.postMessage({requestId:data.requestId,error:error.message});}};

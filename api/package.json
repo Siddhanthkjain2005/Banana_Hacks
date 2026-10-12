@@ -1,0 +1,9 @@
+{
+  "name": "rethread-geometry-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Validated ReThread cutting jobs with private Azure Blob persistence",
+  "type": "commonjs",
+  "engines": { "node": "20.x" },
+  "dependencies": { "@azure/storage-blob": "^12.27.0" }
+}

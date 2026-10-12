@@ -1,0 +1,7 @@
+{
+  "version": "2.0",
+  "functionTimeout": "00:01:00",
+  "extensions": { "http": { "routePrefix": "api", "maxOutstandingRequests": 24, "maxConcurrentRequests": 8, "dynamicThrottlesEnabled": true } },
+  "logging": { "logLevel": { "default": "Warning", "Function.service": "Information" } },
+  "extensionBundle": { "id": "Microsoft.Azure.Functions.ExtensionBundle", "version": "[4.*, 5.0.0)" }
+}

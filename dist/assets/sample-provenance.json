@@ -1,0 +1,24 @@
+{
+  "generator": "Built-in ImageGen",
+  "generatedDate": "2026-10-12",
+  "purpose": "Illustrative source fabric examples for ReThread. These are AI-generated photo-style images, not photographs of measured physical fabric.",
+  "calibrationNote": "Scene widths are illustrative assumptions for the demo. Users must measure real photographs before cutting real fabric.",
+  "basePrompt": "Use case: photorealistic-natural. Asset type: illustrative fabric-source photo for a sewing design web app. A believable overhead studio photograph of exactly seven individually separated, large, flat, usable cotton fabric offcuts on a completely solid matte ivory-white background. Landscape composition, camera exactly perpendicular above, no perspective, daylight-balanced soft diffuse lighting with extremely faint tight shadows, no vignette or background texture. Seven pieces each have visible fine woven textile texture and a few naturally frayed yarns at their cut edges. Every piece is fully inside the frame and flat, no curling, no holes, no logos, no labels, no text, no rulers, no scissors, no decorative objects. Clear wide background channels separate every piece; no pieces touch or overlap. Compose two very large broad almost rectangular offcuts across the upper two thirds of the image, with minor irregular corners, occupying about 60% of image area together. Five smaller broad almost rectangular fabric offcuts in a neat separate row across the bottom third, with enough vertical height to be useful for sewing straps and patches. Leave at least a 3% background margin around the image. Rich photorealistic fiber texture, subtle natural rumpling that stays flat, tidy editorial textile flat lay.",
+  "variants": [
+    {
+      "id": "denim-photo",
+      "asset": "sample-denim-photo.png",
+      "promptSuffix": "Color story: denim repair. The two large pieces are richly textured medium washed indigo denim and deep navy cotton twill. Five smaller pieces are dusty teal cotton, warm tan canvas, faded sky blue denim, dark charcoal cotton and muted olive cotton. No very pale cloth that blends into the background; keep all fabric visibly darker or more chromatic than the white background."
+    },
+    {
+      "id": "autumn-photo",
+      "asset": "sample-autumn-photo.png",
+      "promptSuffix": "Color story: autumn linen. The two large pieces are terracotta rust linen and sage olive cotton. Five smaller pieces are golden ochre woven cotton, warm camel linen, dusty burgundy cotton, muted forest green cotton and mid-tone brown linen. All cloth should contrast clearly with the light ivory-white background. Cozy sophisticated colors and realistic linen slubs."
+    },
+    {
+      "id": "bright-photo",
+      "asset": "sample-bright-photo.png",
+      "promptSuffix": "Color story: colorful school cotton. The two large pieces are strong cobalt blue plain cotton and cheerful coral-red plain cotton. Five smaller pieces are mustard yellow cotton, emerald green cotton, purple plum cotton, teal cotton and warm orange cotton. All solids, no polka dots or checkered prints, no very pale cloth. Cheerful vivid colors with real natural cotton texture, not plastic, not an illustration."
+    }
+  ]
+}
