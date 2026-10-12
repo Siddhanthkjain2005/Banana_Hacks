@@ -13,6 +13,7 @@ const { arrangePatches, leftoverScraps, largestRectangle, erode, usableOf } = re
 const { planChain } = require('../api/lib/chain.cjs');
 const { encodePNG, decodePNG } = require('../api/lib/png.cjs');
 const { createFileStore } = require('../api/lib/file-store.cjs');
+const { createImageGenerator } = require('../api/lib/imagegen.cjs');
 const { hexToRgb } = require('../api/lib/color.cjs');
 const { validateJobPayload } = require('../api/lib/validate.cjs');
 
@@ -243,6 +244,20 @@ test('image provider failures map to safe errors and renders are rate limited', 
   const limited = await handler({ ...request('POST', 'concept', payload()), headers: { 'content-type': 'application/json', ...same } });
   assert.equal(limited.status, 429);
   assert.equal(limited.headers['Retry-After'], '60');
+});
+
+test('image provider deadlines also bound stalled success and error response bodies', { timeout: 1000 }, async () => {
+  for (const status of [200, 401]) {
+    let requestSignal;
+    const generator = createImageGenerator({ env: { RETHREAD_IMAGE_API_KEY: 'sk-test-secret' }, timeoutMs: 20,
+      fetch: async (_url, init) => {
+        requestSignal = init.signal;
+        return { ok: status === 200, status, json: () => new Promise(() => {}) };
+      } });
+    await assert.rejects(generator.generate({ prompt: 'Test a validated layout.', referencePng: Buffer.from(pngBase64, 'base64') }),
+      error => error.status === 504 && error.code === 'IMAGE_PROVIDER_TIMEOUT');
+    assert.equal(requestSignal.aborted, true, 'the upstream request is aborted when body decoding stalls');
+  }
 });
 
 function parsePdf(buffer) {

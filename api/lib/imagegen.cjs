@@ -39,24 +39,39 @@ function createImageGenerator({ env = process.env, fetch: fetchImpl = globalThis
       const forward = () => controller.abort();
       signal?.addEventListener('abort', forward);
       const started = Date.now();
-      let response;
+      const abortError = () => controller.signal.aborted && !signal?.aborted ? new ApiError(504, 'IMAGE_PROVIDER_TIMEOUT', 'The image provider did not respond in time.') : new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider could not be reached.');
+      let onAbort;
+      const aborted = new Promise((_, reject) => {
+        onAbort = () => reject(abortError());
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+      });
+      if (signal?.aborted) forward();
       try {
-        response = await fetchImpl(`${baseUrl}/images/edits`, { method: 'POST', headers: auth === 'api-key' ? { 'api-key': apiKey } : { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
-      } catch {
-        throw controller.signal.aborted && !signal?.aborted ? new ApiError(504, 'IMAGE_PROVIDER_TIMEOUT', 'The image provider did not respond in time.') : new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider could not be reached.');
-      } finally { clearTimeout(timer); signal?.removeEventListener('abort', forward); }
-      if (!response.ok) {
-        let code;
-        try { code = (await response.json())?.error?.code; } catch { /* the status alone decides */ }
-        throw providerError(response.status, code);
+        // Keep the deadline active through response decoding, including error bodies.
+        return await Promise.race([aborted, (async () => {
+          if (controller.signal.aborted) throw abortError();
+          let response;
+          try {
+            response = await fetchImpl(`${baseUrl}/images/edits`, { method: 'POST', headers: auth === 'api-key' ? { 'api-key': apiKey } : { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
+          } catch { throw abortError(); }
+          if (!response.ok) {
+            let code;
+            try { code = (await response.json())?.error?.code; } catch { /* the status alone decides */ }
+            throw providerError(response.status, code);
+          }
+          let item;
+          try { item = (await response.json())?.data?.[0]; } catch { throw new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider returned an unreadable response.'); }
+          const bytes = typeof item?.b64_json === 'string' ? Buffer.from(item.b64_json, 'base64') : Buffer.alloc(0);
+          const mimeType = MAGIC.find(([, magic]) => magic.every((b, i) => bytes[i] === b))?.[0];
+          if (!mimeType || bytes.length > MAX_IMAGE_BYTES) throw new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider did not return a supported image.');
+          return { mimeType, base64: bytes.toString('base64'), model, provider: host, quality, elapsedMs: Date.now() - started,
+            ...(typeof item.revised_prompt === 'string' ? { revisedPrompt: item.revised_prompt.slice(0, 4000) } : {}) };
+        })()]);
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', forward);
+        controller.signal.removeEventListener('abort', onAbort);
       }
-      let item;
-      try { item = (await response.json())?.data?.[0]; } catch { throw new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider returned an unreadable response.'); }
-      const bytes = typeof item?.b64_json === 'string' ? Buffer.from(item.b64_json, 'base64') : Buffer.alloc(0);
-      const mimeType = MAGIC.find(([, magic]) => magic.every((b, i) => bytes[i] === b))?.[0];
-      if (!mimeType || bytes.length > MAX_IMAGE_BYTES) throw new ApiError(502, 'IMAGE_PROVIDER_FAILED', 'The image provider did not return a supported image.');
-      return { mimeType, base64: bytes.toString('base64'), model, provider: host, quality, elapsedMs: Date.now() - started,
-        ...(typeof item.revised_prompt === 'string' ? { revisedPrompt: item.revised_prompt.slice(0, 4000) } : {}) };
     },
   };
 }

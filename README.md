@@ -31,6 +31,8 @@ Built for **Banana Hacks** by **Oddment Guild**: Siddhanth K Jain, Adithya P, Ka
 | Printable maker packet | A4 or Letter PDF with calibration bar, cut list, per-scrap cutting diagrams, sewing layout, and steps, for repair cafés and classrooms. |
 | Read-only sharing and impact | Owners mint viewer links that cannot delete. Impact estimates cite their assumptions. Every route is described in OpenAPI 3.1. |
 
+The v1.2 chains, pools, colour arrangements, PDF packets, and sharing capabilities are available through the [API](api/README.md). The studio exposes photo analysis, neural review, 3D planning, its existing exports, and private receipts. External image generation is an optional provider integration.
+
 ## Try it in a minute
 
 1. Open the demo and select **Browse samples**, or upload a top-down photograph of separated scraps.
@@ -83,7 +85,7 @@ Open the printed localhost URL. The static studio, neural runtime, and model wei
 npm ci --prefix api       # install Azure persistence dependencies
 npm run dev               # studio + full API locally, receipts stored in .rethread-data/
 npm run demo              # run every backend feature on the bundled samples → demo-output/
-npm test                  # 57 geometry, model-integrity, backend, and feature tests
+npm test                  # 58 geometry, model-integrity, backend, and feature tests
 npm run sync:api          # synchronize the Azure engine after editing browser core
 ```
 
@@ -91,19 +93,21 @@ Deploy `dist/` and `api/` together on Azure Static Web Apps. Configure `STORAGE_
 
 ## Validation
 
-**57 tests pass.** They cover real mask containment, cut overlap, calibration, incomplete layouts, neural refinement invariants, model checksums, capability access, expiry, bounded requests, interrupted-write recovery, and concurrent duplicate prevention. Version 1.2 tests add:
+**58 tests pass.** They cover real mask containment, cut overlap, calibration, incomplete layouts, neural refinement invariants, model checksums, capability access, expiry, bounded requests, interrupted-write recovery, and concurrent duplicate prevention. Version 1.2 tests add:
 - exact leftover-mask erosion and cross-project validation for chains;
 - pooled plans that no single donor can complete;
 - permutation-only colour arrangement;
 - well-formed PDF packets with a calibrated 100 mm bar;
 - design maps drawn from measured colours;
-- mocked image-provider auth, privacy, and error mapping;
+- mocked image-provider auth, privacy, error mapping, and deadlines through response-body decoding;
 - read-only share capabilities;
 - OpenAPI coverage, security headers, and structured logs.
 
 CI also runs the end-to-end demo on the bundled samples.
 
 Public Azure checks passed storage readiness, durable save, identical-request replay, changed-input rejection, private retrieval, wrong-key rejection, and deletion. Real browser inference produced a neural mask, updated material area, recalculated a complete 26-cut plan, and saved the result privately. [Verification details](docs/VERIFICATION.md).
+
+The deployed v1.2 API also passed the sample demo for planning, leftover chains, pooled fabric, design maps, A4/Letter packets, and read-only sharing. Viewer deletion returns 403; owner deletion succeeds. External image generation is not configured on this deployment.
 
 ## Repository guide
 
@@ -120,4 +124,4 @@ Public Azure checks passed storage readiness, durable save, identical-request re
 
 Physical dimensions depend on entered scene width and photograph quality. Review fabric condition, grain, stretch, and scale before cutting. SlimSAM is a general segmentation model; the app does not identify textile composition or prove sewing suitability. Utilization is a geometric estimate, and the nesting heuristic does not guarantee global optimality.
 
-Three.js supplies rendering; SlimSAM, Transformers.js, and ONNX Runtime supply neural inference; Azure SDK supplies storage. Codex assisted development, and ImageGen supplied three labeled samples. Model revisions, file hashes, asset prompts, and third-party license notices are included. [Credits and licenses](THIRD_PARTY_NOTICES.md).
+Three.js supplies rendering; SlimSAM, Transformers.js, and ONNX Runtime supply neural inference; Azure SDK supplies storage. Codex and Claude assisted development, and ImageGen supplied three labeled samples. Model revisions, file hashes, asset prompts, and third-party license notices are included. [Credits and licenses](THIRD_PARTY_NOTICES.md).
