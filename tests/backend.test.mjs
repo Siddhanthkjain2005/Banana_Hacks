@@ -23,10 +23,11 @@ const request = (method, route, body, token, extra = {}) => ({ method, url: `htt
   ...(body !== undefined ? { body } : {}), ...extra });
 const json = response => JSON.parse(response.body);
 
-test('production core files are byte-identical to the actual browser engine', async () => {
-  for (const [source, copy] of [['vision.js', 'vision.mjs'], ['recommend.js', 'recommend.mjs'], ['vision.js', 'vision.js']]) {
+test('server uses the same geometry and recommendations as the browser', async () => {
+  for (const [source, copy] of [['vision.js', 'vision.mjs'], ['recommend.js', 'recommend.mjs']]) {
     const [a, b] = await Promise.all([readFile(new URL(`../dist/${source}`, import.meta.url)), readFile(new URL(`../api/core/${copy}`, import.meta.url))]);
-    assert.equal(Buffer.compare(a, b), 0);
+    const expected = source === 'recommend.js' ? a.toString().replace("from './vision.js'","from './vision.mjs'") : a.toString();
+    assert.equal(b.toString(), expected);
   }
 });
 

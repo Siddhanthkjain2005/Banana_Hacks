@@ -1,5 +1,13 @@
 node_modules/
 .DS_Store
-*.zip
 *.log
-.openai/*credential*
+*.zip
+*.tar.gz
+.env
+.env.*
+!.env.example
+local.settings.json
+.openai/
+.azure/
+.swa/
+coverage/

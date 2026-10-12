@@ -1,4 +1,4 @@
-import { optimizePattern } from './vision.js';
+import { optimizePattern } from './vision.mjs';
 
 const PRODUCT_NAMES = {
   tote: 'tote',
